@@ -5,7 +5,8 @@
 
 ###############################################################################################
 #install.packages(c("ncdf4", "lattice"))
-library(ncdf4)
+#library(ncdf4)
+library(sf)
 library(RColorBrewer)
 library(lattice)
 library(tidyverse)
@@ -19,9 +20,10 @@ rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDr
               tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+10)
 memory.limit(size=20000)
 ###############################################################################################
-#From Schwartz et al., 2020 
-
-##################################################1. MCWD quantifies the severity of dry season
+#From Schwartz et al., 2020, I extracted which dimensions of rainfall I should calculate 
+##################################################
+#Absolute seasonality
+##################################################1. MCWD quantifies the severity of dry season (based on latest climatalogical normal i.e. 1982-2010)
 
 india_shp<-readOGR(dsn="C:/Users/Trisha_Gopalakrishna/OneDrive - Nexus365/Paper2/Data/Admin/gadm36_IND_shp", 
                    layer="gadm36_IND_0")
@@ -202,7 +204,7 @@ plot(mean_month_value)
 output_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//MCWD//PET_rasters//Mean_month_pet//"
 writeRaster(mean_month_value,filename = file.path(paste0(output_path,"_", "pet_dec")), format="GTiff") #change 'pet/ppt_monthname'
 
-#Could not make above code a function, so reran it by chan
+#Could not make above code a function, so reran it by changing ppt to pet
 remove(temp, mean_month_value, month_rainfall_rasters, month_stack, input_path, month_input_list, output_path)
 
 mean.monthly.rainfall<-list.files(path= "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//MCWD//PPT_rasters//Mean_month_ppt", pattern = '.tif$', full.names = T)
@@ -266,17 +268,169 @@ Sys.time()
 
 mcwd.a
 plot(mcwd.a)
+mcwd.a<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//MCWD//mcwd.tif")
+##################################################
+##################################################2. Dry season length 1982 to 2010
+input_path1<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//MCWD//PPT_rasters"
+input_path2<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//MCWD//PET_rasters"
 
-##################################################2. MAP
-# Processed in GEE (CHIRPS script)
-map<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//MAP//CHIRPSAnnualPrecip.tif")
+month_input_list1 <- list.files(path= input_path1 , pattern = '.tif$', full.names = T) #All rasters of all years and months
+month_input_list1
+month_input_list2 <- list.files(path= input_path2 , pattern = '.tif$', full.names = T) #All rasters of all years and months
+month_input_list2
+
+month_ppt_rasters<-list()
+for (i in 1:length(month_input_list1)){
+  temp<-raster(file.path(month_input_list1[i]))
+  month_ppt_rasters[[i]]<-temp
+}
+
+month_pet_rasters<-list()
+for (i in 1:length(month_input_list2)){
+  temp<-raster(file.path(month_input_list2[i]))
+  month_pet_rasters[[i]]<-temp
+}
+
+stack_list<-list() #creating stacks of ppt an dpet for eahc month for each year
+for (i in 1:length(month_pet_rasters)){
+  ppt<-month_ppt_rasters[[i]]
+  pet<-month_pet_rasters[[i]]
+  if(names(ppt)==names(pet)){
+    stack1<-stack(ppt,pet)
+    result<-stack1
+    stack_list[[i]]<-stack1
+  }
+}
+remove(stack1)
+
+rc<-function(ppt, pet){
+  ifelse(ppt<pet,1,0)
+} #function with if statement to reclass 
+
+reclass_list<-list()
+for (i in 1:length(stack_list)){ #running function over entire list of stacks of pet and ppt
+  r.class<-overlay(stack_list[[i]], fun=rc)
+  names(r.class)<-names(stack_list[[i]])[1]
+  reclass_list[[i]]<-r.class
+}
+reclass_stack<-stack(reclass_list)
+indice<-rep(c(1, 2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29), each = 12)
+
+year_sum<-stackApply(reclass_stack, indice, fun = sum)
+mean_dry_season_months<-mean(year_sum)
+writeRaster(mean_dry_season_months, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//DrySeasonLength//dryseasonlength_1982_2010.tif")
+
+remove(rc, reclass_list,i, raster_name_index, drySeasonLength, reclass_stack, year_sum)
+##################################################
+##################################################3. Dry season rainfall 1982 to 2010
+rc_2<-function(ppt, pet){
+  ifelse(ppt<pet, ppt,0)
+} #function with if statement to reclass 
+
+reclass_list_2<-list()
+for (i in 1:length(stack_list)){ #running function over entire list of stacks of pet and ppt
+  r.class<-overlay(stack_list[[i]], fun=rc_2)
+  names(r.class)<-names(stack_list[[i]])[1]
+  reclass_list_2[[i]]<-r.class
+}
+reclass_stack_2<-stack(reclass_list_2)
+year_sum_2<-stackApply(reclass_stack_2, indice, fun = sum)
+mean_dry_season_rainfall<-mean(year_sum_2)
+writeRaster(mean_dry_season_rainfall, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//DrySeasonRainfall//dryseasonrainfall_1982_2010.tif")
+
+remove(r.class,rc_2,year_sum_2, reclass_stack_2, reclass_list_2, stack_list)
+##################################################
+##################################################4. Seasonality Index (Feng et al., 2012) 1982 to 2010
+ppt_stack<-stack(month_ppt_rasters)
+
+seasonalityIndexWalsh <- function(rainSeries){#function calculates Walsh and Lawler's (1981) seasonality index
+  AR <- sum(rainSeries)
+  seas <- (1/AR)*sum(abs(rainSeries-AR/12))
+  return(seas)
+}
+
+seasonality1982<-seasonalityIndexWalsh(ppt_stack[[1:12]])
+seasonality1983<-seasonalityIndexWalsh(ppt_stack[[13:24]])
+seasonality1984<-seasonalityIndexWalsh(ppt_stack[[24:36]])
+seasonality1985<-seasonalityIndexWalsh(ppt_stack[[37:48]])
+seasonality1986<-seasonalityIndexWalsh(ppt_stack[[49:60]])
+seasonality1987<-seasonalityIndexWalsh(ppt_stack[[61:72]])
+seasonality1988<-seasonalityIndexWalsh(ppt_stack[[72:84]])
+seasonality1989<-seasonalityIndexWalsh(ppt_stack[[85:96]])
+seasonality1990<-seasonalityIndexWalsh(ppt_stack[[97:108]])
+
+seasonality1991<-seasonalityIndexWalsh(ppt_stack[[109:120]])
+seasonality1992<-seasonalityIndexWalsh(ppt_stack[[121:132]])
+seasonality1993<-seasonalityIndexWalsh(ppt_stack[[133:144]])
+seasonality1994<-seasonalityIndexWalsh(ppt_stack[[145:156]])
+seasonality1995<-seasonalityIndexWalsh(ppt_stack[[157:168]])
+seasonality1996<-seasonalityIndexWalsh(ppt_stack[[169:180]])
+seasonality1997<-seasonalityIndexWalsh(ppt_stack[[181:192]])
+seasonality1998<-seasonalityIndexWalsh(ppt_stack[[193:204]])
+seasonality1999<-seasonalityIndexWalsh(ppt_stack[[205:216]])
+seasonality2000<-seasonalityIndexWalsh(ppt_stack[[217:228]])
+
+seasonality2001<-seasonalityIndexWalsh(ppt_stack[[229:240]])
+seasonality2002<-seasonalityIndexWalsh(ppt_stack[[241:252]])
+seasonality2003<-seasonalityIndexWalsh(ppt_stack[[253:264]])
+seasonality2004<-seasonalityIndexWalsh(ppt_stack[[265:276]])
+seasonality2005<-seasonalityIndexWalsh(ppt_stack[[277:288]])
+seasonality2006<-seasonalityIndexWalsh(ppt_stack[[289:300]])
+seasonality2007<-seasonalityIndexWalsh(ppt_stack[[301:312]])
+seasonality2008<-seasonalityIndexWalsh(ppt_stack[[313:324]])
+seasonality2009<-seasonalityIndexWalsh(ppt_stack[[325:336]])
+seasonality2010<-seasonalityIndexWalsh(ppt_stack[[337:348]])
+
+seasonality_across_years<-mean(seasonality1982,seasonality1983,seasonality1984,seasonality1985,seasonality1986,seasonality1987,seasonality1988,seasonality1989,seasonality1990,
+                  seasonality1991,seasonality1992,seasonality1993,seasonality1994,seasonality1995,seasonality1996,seasonality1997,seasonality1998,seasonality1999,
+                  seasonality2000,seasonality2001,seasonality2002,seasonality2003,seasonality2004,seasonality2005,seasonality2006,seasonality2007,seasonality2008,
+                  seasonality2009,seasonality2010)
+writeRaster(seasonality_across_years, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//PrecipSeasonality//seasonalitywalsh_1982_2010.tif") 
+remove(seasonality1982,seasonality1983,seasonality1984,seasonality1985,seasonality1986,seasonality1987,seasonality1988,seasonality1989,seasonality1990,
+       seasonality1991,seasonality1992,seasonality1993,seasonality1994,seasonality1995,seasonality1996,seasonality1997,seasonality1998,seasonality1999,
+       seasonality2000,seasonality2001,seasonality2002,seasonality2003,seasonality2004,seasonality2005,seasonality2006,seasonality2007,seasonality2008,
+       seasonality2009,seasonality2010)
+##################################################5. MAP -1981 to 2019
+# Processed in GEE (Savannah script in Climate)
+## Calculated as sum of daily precip for each month for all years and then divided by total number of months 
+map<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//MAP//Savannah_MAP_1981_2020.tif")
 map
 plot(map)
 
-##################################################3. Coefficient of variation of MAP
-# Processed in GEE (CHIRPS script)
-map_cv<-raster("C:///Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//PrecipSeasonality_CV//CHIRPSPrecipSeasonality.tif")
+##################################################
+##################################################6. Coefficient of variation of MAP- 1981 to 2019
+# Processed in GEE (CHIRPS script in Climate i.e. not Savannah script)
+## Calculated as SD(precip in each months in entire time period)/ 1+(mean of precip of all months)
+map_cv<-raster("C:///Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//PrecipSeasonality_CV//Savannah_PrecipSeasonality_1981_2020.tif")
 map_cv
 plot(map_cv)
 
-##################################################4. Dry season length
+
+
+
+##Plots
+library(tmap)
+
+asia<- st_read("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper1//Data//Admin//Longitude_Graticules_and_World_Countries_Boundaries-shp//asian_countries_map2.shp") 
+india_boundary_roy<-st_read("C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper1\\Data\\Admin\\gadm36_IND_shp\\India_bound.shp")
+
+map_extent<- st_bbox(c(xmin=63.7, xmax=98.3,
+                       ymin=5.8, ymax=39), crs=4326) %>% st_as_sfc()
+
+mcwd_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(mcwd.a) + tm_raster(palette = "YlOrRd",title="MCWD")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+mcwd_map
+
+map_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(map) + tm_raster(palette = "Blues",title="Mean Annual Precipitation (mm)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+map_map
+
+mapcv_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(map_cv) + tm_raster(palette = "Purples",title="Coefficient of variation MAP(mm)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+mapcv_map
+
+drv<-tmap_arrange(mcwd_map, map_map, mapcv_map, ncol=3)
+tmap_save(drv,"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Rainfall//drv_plot.png", dpi = 700)
