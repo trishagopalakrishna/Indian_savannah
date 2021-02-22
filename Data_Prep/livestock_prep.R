@@ -1,7 +1,7 @@
 ### In this script I clean the web scraped livestock data from animal husbandry statistics website, for each district
 ### Started on- 03/02/2021
 ### Last edit made on- 
-### Last edit made-
+### Last edit made- calculated dry matter intake
 
 ###############################################################################################
 
@@ -11,8 +11,10 @@ library(tidyverse)
 library(raster)
 library(rgdal)
 library(ggplot2)
-
-
+library(sf)
+library(tmap)
+library(RColorBrewer)
+library(viridis)
 
 rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
               tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+10)
@@ -516,6 +518,7 @@ state_buffalo<- buffalo_data_nototal1 %>% group_by(Region, State_Name) %>%
                    .funs = c(sum="sum"))
 head(state_buffalo)
 state_buffalo_pivot<- pivot_longer(state_buffalo,3:13)
+write.csv(state_buffalo_pivot, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_buffalo.csv")
 state_list<-split(state_buffalo_pivot, state_buffalo_pivot$State_Name)
 Sys.time()
 pdf("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_buffalo.pdf", width=8, height=18)
@@ -866,3 +869,507 @@ plot(a)
 ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//national_mithun.png")
 
 remove(a,b,mithun_data,mithun_data_nototal,nation_mithun, nation_mithun_pivot, odisha_mithun, orissa_mithun, state_mithun, state_mithun_pivot,x,x_pivot,i, mithun_processing, state_list)
+
+############################################################################################### 
+###############################################################################################
+# Data processing to obtain dry matter intake
+# Global Grided Livestock raster data does not have the level of detail- sex, urban/rural, age group, milk, calves, draft etc
+# as the tabular data does. So cannot apply the IPCC dry matter intake equations. 
+
+#For raster analyses- Applying wolf et al., 2013 metabolic rate kg DM/day equation 2 from Table 1
+
+#Body weight - from Table 1 Singhal et al., 2005
+# Adult cattle Crossbred male Working bulls range, Crossbred female milking cows range, indigenous cattle male working bulls range, indigenous cattle female milking cows
+cattle_bw<-c((280+354)/2, (260+320)/2, (300+352)/2, (200+333)/2)
+final_cattle_bw<-mean(cattle_bw)
+# Adult buffalo - Buffalo male working bulls range, buffalo female milking buffaloes range
+buffalo_bw<-c((475+550)/2, (400+516)/2)
+final_buffalo_bw<-mean(buffalo_bw)
+# Adult sheep- Sheep male 1-2 years range, sheep female 1-2 years range
+sheep_bw<-c((30+40)/2, (25+30)/2)
+final_sheep_bw<-mean(sheep_bw)
+# Adult goat- Goat male 1-2 years range, Goat female 1-2 years range
+goat_bw<-c((12+27)/2, (12+25.6)/2)
+final_goat_bw<- mean(goat_bw)
+# Adult horse- >3 years
+final_horse_bw<-300
+
+##1. cattle- 
+cattle_global<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//cattle_files//6_Ct_2010_Aw.tif")
+cattle_global
+plot(cattle_global)
+
+india_shp<-st_read(dsn="C:/Users/Trisha_Gopalakrishna/OneDrive - Nexus365/Paper2/Data/Admin/gadm36_IND_shp", 
+                   layer="gadm36_IND_0")
+
+cattle_india<-crop(cattle_global, india_shp)
+cattle_india_mask<-mask(cattle_india, india_shp)
+plot(cattle_india_mask)
+cattle_india_mask
+
+cattle_india_DM<- cattle_india_mask * (0.021*final_cattle_bw^0.716)* 365 # Assume eating is everyday
+cattle_india_DM # total kgDM/yr
+cattle_india_DM_Mt<-cattle_india_DM/10^9
+writeRaster(cattle_india_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//cattle_DM.tif")
+
+##2. buffalo-
+buffalo_global<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//buffalo_files//6_Bf_2010_Aw.tif")
+buffalo_global
+plot(buffalo_global)
+
+buffalo_india<-crop(buffalo_global, india_shp)
+buffalo_india_mask<-mask(buffalo_india, india_shp)
+plot(buffalo_india_mask)
+buffalo_india_mask
+
+buffalo_india_DM<- buffalo_india_mask * (0.021*final_buffalo_bw^0.716)* 365 # Assume eating is everyday
+buffalo_india_DM# total kgDM/yr
+buffalo_india_DM_Mt<-buffalo_india_DM/10^9
+writeRaster(buffalo_india_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//buffalo_DM.tif")
+
+##3. goat
+goat_global<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//goat_files//6_Gt_2010_Aw.tif")
+goat_global
+plot(goat_global)
+
+goat_india<-crop(goat_global, india_shp)
+goat_india_mask<-mask(goat_india, india_shp)
+plot(goat_india_mask)
+goat_india_mask
+
+goat_india_DM<- goat_india_mask * (0.021*final_goat_bw^0.716)* 365 # Assume eating is everyday
+goat_india_DM # total kgDM/yr
+goat_india_DM_Mt<- goat_india_DM/10^9
+writeRaster(goat_india_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//goat_DM.tif")
+
+##4. sheep
+sheep_global<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//sheep_files//6_Sh_2010_Aw.tif")
+sheep_global
+plot(sheep_global)
+
+sheep_india<-crop(sheep_global, india_shp)
+sheep_india_mask<-mask(sheep_india, india_shp)
+plot(sheep_india_mask)
+sheep_india_mask
+
+sheep_india_DM<- sheep_india_mask * (0.021*final_sheep_bw^0.716)* 365 # Assume eating is everyday
+sheep_india_DM # total kgDM/yr
+sheep_india_DM_Mt<-sheep_india_DM/10^9
+writeRaster(sheep_india_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//sheep_DM.tif")
+
+##5. horse
+horses_global<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//horses_files//6_Ho_2010_Aw.tif")
+horses_global
+plot(horses_global)
+
+horses_india<-crop(horses_global, india_shp)
+horses_india_mask<-mask(horses_india, india_shp)
+plot(horses_india_mask)
+horses_india_mask
+
+horses_india_DM<- horses_india_mask * (0.021*final_horse_bw^0.716)* 365 # Assume eating is everyday
+horses_india_DM # total kgDM/yr
+horses_india_DM_Mt<-horses_india_DM/10^9
+writeRaster(horses_india_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//horse_DM.tif")
+
+
+asia<- st_read("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper1//Data//Admin//Longitude_Graticules_and_World_Countries_Boundaries-shp//asian_countries_map2.shp") 
+india_boundary_roy<-st_read("C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper1\\Data\\Admin\\gadm36_IND_shp\\India_bound.shp")
+
+map_extent<- st_bbox(c(xmin=63.7, xmax=98.3,
+                       ymin=5.8, ymax=39), crs=4326) %>% st_as_sfc()
+
+cattle_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(cattle_india_DM_Mt) + tm_raster(style='quantile', n=8,palette = "YlOrRd",title="Total Cattle Dry Matter Intake (Mt/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+cattle_map
+
+buffalo_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(buffalo_india_DM_Mt) + tm_raster(style='quantile', n=8,palette = "Purples",title="Total Buffalo Dry Matter Intake (Mt/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+buffalo_map
+
+goat_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(goat_india_DM_Mt) + tm_raster(style='quantile', n=8,palette = "Reds",title="Total Goat Dry Matter Intake (Mt/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+goat_map
+
+sheep_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(sheep_india_DM_Mt) + tm_raster(style='quantile', n=8,palette = "Greys",title="Total Sheep Dry Matter Intake (Mt/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+sheep_map
+
+horse_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(horses_india_DM_Mt) + tm_raster(style='quantile', n=8,palette = "Blues",title="Total Horse Dry Matter Intake (Mt/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+horse_map
+
+livestock_DM<-tmap_arrange(cattle_map, buffalo_map, goat_map,sheep_map, horse_map, ncol=3)
+tmap_save(livestock_DM,"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//livestock_DM.png", dpi = 300)
+
+remove(livestock_DM, horse_map, sheep_map, goat_map, cattle_map, buffalo_map)
+remove(sheep_global, sheep_india, sheep_india_DM, sheep_india_DM_Mt, sheep_india_mask)
+remove(horses_global, horses_india, horses_india_DM, horses_india_DM_Mt, horses_india_mask)
+remove(goat_global, goat_india, goat_india_DM, goat_india_DM_Mt, goat_india_mask)
+remove(cattle_global, cattle_india, cattle_india_DM, cattle_india_DM_Mt, cattle_india_mask)
+remove(buffalo_global, buffalo_india, buffalo_india_DM, buffalo_india_DM_Mt, buffalo_india_mask)
+###############################################################################################
+# Data processing to obtain dry matter intake
+# Tabular census data does has lots of details like sex, urban/rural, age group, milk, calves, draft etc
+# So applying IPCC guidelines for cattle only. For remaining livestock, using Wolf et al. equation 
+
+##1. Cattle
+cattle1<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_cattle.csv")
+head(cattle1)
+names(cattle1)
+
+
+# Redoing the categories of age and breed and sex according to Singh et al., 2005 Table 1, to easily extract body weight 
+# Crossbred== exotic
+# Male up to 1.5 years- <1 year in Singh et al
+# Male over 1.5 years breeding - Breeding bulls in Singh et al
+# Male over 1.5 years draught- working bulls
+# Male over 1.5 years draught_breeding- Breeding+working bulls in Singh et al
+# Male over 1.5 years others- Others in Singh et al
+
+# Female under 1 year- Calves <1 year in Singh et al
+# Female 1-2.5- Calves 1-3 years in Singh et al
+# Female over 2.5 years Milk- Miling Cows in Singh et al
+# Female over 2.5 dry- Dry Cows
+# Female over 2.5 years no calved- heifer in Singh et al
+# Female over 2.5 others- Others in Singh et al
+
+cattle1<- cattle1 %>% pivot_longer(5:15)
+head(cattle1)
+str(cattle1)
+unique(cattle1$name)
+cattle1<- cattle1 %>% mutate(name=str_replace_all(name, c("Male_upto1.5" ="Male calves<1yr","Male_over1.5_breeding"= "Breeding bulls",
+                                        "Male_over1.5_draught"= "Working bulls","Male_over1.5_draught_breeding" = "Breeding_working bulls",
+                                        "Male_over1.5_others"="Male others", "Female_under1"="Female calves<1yr",
+                                        "Female_1_2.5"="Female calves1_3yr", "Female_over2.5_Milk"="Milking cows",
+                                        "Female_over2.5_Dry"="Dry cows", "Female_over2.5_notcalved"="Heifers",
+                                        "Female_over2.5_others"= "Female others")))
+unique(cattle1$name)
+# from Singh et al., 2005
+cattle1<- cattle1 %>% mutate(BW=case_when(
+  name=="Male calves<1yr"~mean(70,88.5),
+  name=="Breeding bulls"~mean(280,354),
+  name=="Working bulls"~ mean(280, 354),
+  name=="Working bulls_breeding"~ mean(280,354),
+  name=="Male others"~ mean(266,336),
+  name== "Female calves<1yr"~ mean(75,88),
+  name=="Female calves1_3yr" ~ mean(165,194),
+  name=="Milking cows" ~ mean(300,352),
+  name== "Dry cows" ~ mean(300, 352),
+  name== "Heifers" ~ mean(165, 194),
+  name== "Female others"~ mean (200, 330)
+) )
+
+# Using IPCC Feed intake edtimates using a simplified Tier 2 method (Pg 29/209 in PDF viewer)
+# Dry matter intake for calves Eqn 10.17- # Assume that this is for both male and female calves and low quality forage (eg: straws and mature grasses)
+# Dry matter intake for growing cattle Eqn 10.18 # Assume that this is for female calves 1-3 years
+# Dry matter intake for steers and bulls Eqn 10.18a # Assume that this is for Working and Breeding bulls
+# Dry matter intake for heifers Eqn 10.18a # Assume that this is for heifers
+# Dry matter intake for lactating dairy cows Eqn 10.18b # Assume that this is for Milking cows
+###### No eqns for other females and males,dry cows, breeding and working bulls #######
+
+cattle1 <- cattle1 %>% mutate (kgDM_perday = case_when(
+  name =="Male calves<1yr" | name== "Female calves<1yr" ~ BW^0.75*((0.0582*mean(3.5,5.5)-0.00266*mean(3.5,5.5)^2-0.1128)/0.239*mean(3.5,5.5)),
+  name =="Female calves1_3yr" ~ BW^0.75*((0.0582*mean(3.5,5.5)-0.00266^mean(3.5,5.5)^2-0.0869)/0.239*mean(3.5,5.5)),
+  name=="Breeding bulls" | name=="Working bulls" ~ 3.83+(0.0143*BW*0.96),
+  name=="Heifers"~ 3.184+(0.01536*BW*0.96),
+  name=="Milking cows" ~0.0185*BW+0.305*(3.5/100),
+  name=="Male others" | name=="Working bulls_breeding"| name=="Female others"| name=="Dry cows"~0.021*BW^0.716
+))
+head(cattle1)
+
+cattle1<-cattle1 %>% mutate(totalkgDM_perday= value*kgDM_perday)
+cattle1<-cattle1 %>% mutate(totalkgDM_peryear= totalkgDM_perday*365)
+cattle1<-cattle1 %>% mutate(totalMtDM_peryear= totalkgDM_peryear/10^9)
+write.csv(cattle1, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//cattle_state_DM.csv")
+
+national_cattle_MtDM_peryear<- cattle1 %>% summarise(sum=sum(totalMtDM_peryear))
+national_cattle_MtDM_peryear #~928 MtDM per year
+
+state_cattle_DM<- cattle1 %>% group_by(State_Name) %>% summarise(TotalMtDM_peryear=sum(totalMtDM_peryear))
+
+p<- ggplot(data = state_cattle_DM, aes(x= State_Name, y= TotalMtDM_peryear))+ geom_bar(stat = "identity")+ggtitle("Cattle Dry Matter intake (Mt/yr)")+coord_flip()
+p
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//state_cattle_totalDM_peryear.png", dpi=300)
+
+##2. Buffalo
+buffalo1<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_buffalo.csv")
+head(buffalo1)
+names(buffalo1)
+unique(buffalo1$name)
+
+# Redoing the categories of age and breed and sex according to Singh et al., 2005 Table 1, to easily extract body weight 
+# Male up to 2 years- <1 year in Singh et al
+# Male over 2 years breeding - Breeding bulls in Singh et al
+# Male over 2 years draught- working bulls
+# Male over 2 years draught_breeding- Breeding+working bulls in Singh et al
+# Male over 2 years others- Others in Singh et al
+
+# Female under 1 year- Calves <1 year in Singh et al
+# Female 1-3- Calves 1-3 years in Singh et al
+# Female over 3 years Milk- Milking buffalos in Singh et al
+# Female over 3 dry- Dry buffalos
+# Female over 3 years no calved- heifer in Singh et al
+# Female over 3 others- Others in Singh et al
+
+buffalo1<- buffalo1 %>% mutate(name=str_replace_all(name, c("Male_upto2_sum" ="Male calves<1yr",
+                                                            "Male_over2_breeding_sum"= "Breeding bulls",
+                                                          "Male_over2_draught_sum"= "Working bulls",
+                                                          "Male_over2_draught_breeding_sum" = "Working bulls_breeding",
+                                                          "Male_over2_others_sum"="Male others", 
+                                                          "Female_under1_sum"="Female calves<1yr",
+                                                          "Female_1_3_sum"="Female calves1_3yr", 
+                                                          "Female_over3_Milk_sum"="Milking cows",
+                                                          "Female_over3_Dry_sum"="Dry cows",
+                                                          "Female_over3_notcalved_sum"="Heifers",
+                                                          "Female_over3_others_sum"= "Female others")))
+unique(buffalo1$name)
+# from Singh et al., 2005
+buffalo1<- buffalo1 %>% mutate(BW=case_when(
+  name=="Male calves<1yr"~mean(65,80),
+  name=="Breeding bulls"~mean(260,320),
+  name=="Working bulls"~ mean(260, 320),
+  name=="Working bulls_breeding"~ mean(260,320),
+  name=="Male others"~ mean(247,285),
+  name== "Female calves<1yr"~ mean(65,75),
+  name=="Female calves1_3yr" ~ mean(136,157),
+  name=="Milking cows" ~ mean(200,333),
+  name== "Dry cows" ~ mean(200, 363),
+  name== "Heifers" ~ mean(200, 250),
+  name== "Female others"~ mean (200, 330)
+) )
+head(buffalo1)
+
+buffalo1 <- buffalo1 %>% mutate (kgDM_perday=0.021*BW^0.716) 
+head(buffalo1)
+
+buffalo1<-buffalo1 %>% mutate(totalkgDM_perday= value*kgDM_perday)
+buffalo1<-buffalo1 %>% mutate(totalkgDM_peryear= totalkgDM_perday*365)
+buffalo1<-buffalo1 %>% mutate(totalMtDM_peryear= totalkgDM_peryear/10^9)
+write.csv(buffalo1, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//buffalo_state_DM.csv")
+
+national_buffalo_MtDM_peryear<- buffalo1 %>% summarise(sum=sum(totalMtDM_peryear))
+national_buffalo_MtDM_peryear #~24.9377 MtDM per year
+
+state_buffalo_DM<- buffalo1 %>% group_by(State_Name) %>% summarise(TotalMtDM_peryear=sum(totalMtDM_peryear))
+
+p<- ggplot(data = state_buffalo_DM, aes(x= State_Name, y= TotalMtDM_peryear))+ geom_bar(stat = "identity")+ggtitle ("Buffalo Dry Matter intake (Mt/yr)")+coord_flip()
+p
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//state_buffalo_totalDM_peryear.png", dpi=300)
+
+##3. Sheep
+sheep1<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_sheep.csv")
+head(sheep1)
+names(sheep1)
+unique(sheep1$name)
+
+# Redoing the categories of age and breed and sex according to Singh et al., 2005 Table 1, to easily extract body weight 
+# Male up to 1 years- <1 year in Singh et al
+# Male over 1 years- 1-2 Singh et al
+
+# Female under 1 year- Calves <1 year in Singh et al
+# Female over 1 years- 1-2 years in Singh et al
+
+sheep1<- sheep1 %>% mutate(name=str_replace_all(name, c("Male_upto1_sum" ="Male<1yr",
+                                                            "Male_over1above_sum"= "Male_1_2yrs",
+                                                            "Female_upto1_sum"="Female<1yr",
+                                                           "Female_over1above_sum"="Female_1_2yrs")))
+head(sheep1)
+unique(sheep1$name)
+# from Singh et al., 2005
+sheep1<- sheep1 %>% mutate(BW=case_when(
+  name=="Male<1yr"~mean(14,22),
+  name=="Male_1_2yrs"~ mean(30,40),
+  name=="Female<1yr"~mean(14,22),
+  name=="Female_1_2yrs"~mean(25,30)
+))
+head(sheep1)
+
+sheep1 <- sheep1 %>% mutate (kgDM_perday=0.021*BW^0.716) 
+head(sheep1)
+
+sheep1<-sheep1 %>% mutate(totalkgDM_perday= value*kgDM_perday)
+sheep1<-sheep1 %>% mutate(totalkgDM_peryear= totalkgDM_perday*365)
+sheep1<-sheep1 %>% mutate(totalMtDM_peryear= totalkgDM_peryear/10^9)
+write.csv(sheep1, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//sheep_state_DM.csv")
+
+national_sheep_MtDM_peryear<- sheep1 %>% summarise(sum=sum(totalMtDM_peryear))
+national_sheep_MtDM_peryear #~4.060651 MtDM per year
+
+state_sheep_DM<- sheep1 %>% group_by(State_Name) %>% summarise(TotalMtDM_peryear=sum(totalMtDM_peryear))
+
+p<- ggplot(data = state_sheep_DM, aes(x= State_Name, y= TotalMtDM_peryear))+ geom_bar(stat = "identity")+ggtitle ("sheep Dry Matter intake (Mt/yr)")+coord_flip()
+p
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//state_sheep_totalDM_peryear.png", dpi=300)
+
+##4. Goat
+goat1<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_goat.csv")
+head(goat1)
+names(goat1)
+unique(goat1$name)
+
+# Redoing the categories of age and breed and sex according to Singh et al., 2005 Table 1, to easily extract body weight 
+# Male up to 1 years- <1 year in Singh et al
+# Male over 1 years- 1-2 Singh et al
+
+# Female under 1 year- Calves <1 year in Singh et al
+# Female over 1 years- 1-2 years in Singh et al
+# No distinction between females over 1 year that are in milk, dry or not calved. so assumed BW as female over 1 year for all three categories
+
+goat1<- goat1 %>% mutate(name=str_replace_all(name, c("Male_under1_sum" ="Male<1yr",
+                                                        "Male_over1above_sum"= "Male_1_2yrs",
+                                                        "Female_under1_sum"="Female<1yr",
+                                                        "Female_over1above_Milk_sum"="Female_1_2yrs",
+                                                        "Female_over1above_Dry_sum"="Female_1_2yrs",
+                                                        "Female_over1above_notcalved_sum"="Female_1_2yrs")))
+head(goat1)
+unique(goat1$name)
+# from Singh et al., 2005
+goat1<- goat1 %>% mutate(BW=case_when(
+  name=="Male<1yr"~mean(8.8,21.7),
+  name=="Male_1_2yrs"~ mean(12,27),
+  name=="Female<1yr"~mean(8.8,21.7),
+  name=="Female_1_2yrs"~mean(12,25.6)
+))
+head(goat1)
+
+goat1 <- goat1 %>% mutate (kgDM_perday=0.021*BW^0.716) 
+head(goat1)
+
+goat1<-goat1 %>% mutate(totalkgDM_perday= value*kgDM_perday)
+goat1<-goat1 %>% mutate(totalkgDM_peryear= totalkgDM_perday*365)
+goat1<-goat1 %>% mutate(totalMtDM_peryear= totalkgDM_peryear/10^9)
+write.csv(goat1, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//goat_state_DM.csv")
+
+national_goat_MtDM_peryear<- goat1 %>% summarise(sum=sum(totalMtDM_peryear))
+national_goat_MtDM_peryear #~4.88 MtDM per year
+
+state_goat_DM<- goat1 %>% group_by(State_Name) %>% summarise(TotalMtDM_peryear=sum(totalMtDM_peryear))
+
+p<- ggplot(data = state_goat_DM, aes(x= State_Name, y= TotalMtDM_peryear))+ geom_bar(stat = "identity")+ggtitle ("Goat Dry Matter intake (Mt/yr)")+coord_flip()
+p
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//state_goat_totalDM_peryear.png", dpi=300)
+
+##5. Camel
+camel1<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_camel.csv")
+head(camel1)
+names(camel1)
+unique(camel1$name)
+
+# Redoing the categories of age and breed and sex according to Singh et al., 2005 Table 1, to easily extract body weight 
+# No data for camels (female or male) below 4 years. Only over 4 years, no female or male specific BW
+camel1<- camel1 %>% mutate(name=str_replace_all(name, c("Male_under4_sum" ="Male<4yr",
+                                                      "Male_over4above_sum"= "Male>4yrs",
+                                                      "Female_under4_sum"="Female<4yr",
+                                                      "Female_over4above_sum"="Female>4yrs")))
+head(camel1)
+unique(camel1$name)
+# from Singh et al., 2005
+camel1<- camel1 %>% mutate(BW=case_when(
+  name=="Male<4yr"~0,
+  name=="Male>4yrs"~ 300,
+  name=="Female<4yr"~0,
+  name=="Female>4yrs"~300
+))
+head(camel1)
+
+camel1 <- camel1 %>% mutate (kgDM_perday=0.021*BW^0.716) 
+head(camel1)
+
+camel1<-camel1 %>% mutate(totalkgDM_perday= value*kgDM_perday)
+camel1<-camel1 %>% mutate(totalkgDM_peryear= totalkgDM_perday*365)
+camel1<-camel1 %>% mutate(totalMtDM_peryear= totalkgDM_peryear/10^9)
+write.csv(camel1, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//camel_state_DM.csv")
+
+national_camel_MtDM_peryear<- camel1 %>% summarise(sum=sum(totalMtDM_peryear))
+national_camel_MtDM_peryear #~0.1308 MtDM per year
+
+state_camel_DM<- camel1 %>% group_by(State_Name) %>% summarise(TotalMtDM_peryear=sum(totalMtDM_peryear))
+
+p<- ggplot(data = state_camel_DM, aes(x= State_Name, y= TotalMtDM_peryear))+ geom_bar(stat = "identity")+ggtitle ("Camel Dry Matter intake (Mt/yr)")+coord_flip()
+p
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//state_camel_totalDM_peryear.png", dpi=300)
+
+##6. Horses
+horse1<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_horses.csv")
+head(horse1)
+names(horse1)
+unique(horse1$name)
+
+# Redoing the categories of age and breed and sex according to Singh et al., 2005 Table 1, to easily extract body weight 
+# Male_under4_sum and Female_under_4_sum- Assume this is Horses below 3 yrs
+# Above 4 years in above 3 years
+# No split between male and female
+horse1<- horse1 %>% mutate(name=str_replace_all(name, c("Male_under4_sum" ="Male<3yr",
+                                                        "Male_over4above_sum"= "Male>3yrs",
+                                                        "Female_under4_sum"="Female<3yr",
+                                                        "Female_over4above_sum"="Female>3yrs")))
+head(horse1)
+unique(horse1$name)
+# from Singh et al., 2005
+horse1<- horse1 %>% mutate(BW=case_when(
+  name=="Male<3yr"~200,
+  name=="Male>3yrs"~ 300,
+  name=="Female<3yr"~200,
+  name=="Female>3yrs"~300
+))
+head(horse1)
+
+horse1 <- horse1 %>% mutate (kgDM_perday=0.021*BW^0.716) 
+head(horse1)
+
+horse1<-horse1 %>% mutate(totalkgDM_perday= value*kgDM_perday)
+horse1<-horse1 %>% mutate(totalkgDM_peryear= totalkgDM_perday*365)
+horse1<-horse1 %>% mutate(totalMtDM_peryear= totalkgDM_peryear/10^9)
+write.csv(horse1, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//horse_state_DM.csv")
+
+national_horse_MtDM_peryear<- horse1 %>% summarise(sum=sum(totalMtDM_peryear))
+national_horse_MtDM_peryear #~0.0081197 MtDM per year
+
+state_horse_DM<- horse1 %>% group_by(State_Name) %>% summarise(TotalMtDM_peryear=sum(totalMtDM_peryear))
+
+p<- ggplot(data = state_horse_DM, aes(x= State_Name, y= TotalMtDM_peryear))+ geom_bar(stat = "identity")+ggtitle ("Horse Dry Matter intake (Mt/yr)")+coord_flip()
+p
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//state_horse_totalDM_peryear.png", dpi=300)
+
+##7. Yak
+yak1<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//state_mithun.csv")
+head(yak1)
+names(yak1)
+unique(yak1$name)
+unique(yak1$Type)
+
+# Redoing the categories of age and breed and sex according to Singh et al., 2005 Table 1, to easily extract body weight 
+# Only yak and mithun BW provided in Singh et al i.e. no data by sex or age. So assigning BW based on Tupe column
+
+# from Singh et al., 2005
+yak1<- yak1 %>% mutate(BW=case_when(
+  Type=="Mithun"~400,
+  Type=="MIthun"~400,
+  Type=="Yak"~300
+))
+head(yak1)
+summary(yak1)
+yak1[is.na(yak1$value),]
+
+yak1 <- yak1 %>% mutate (kgDM_perday=0.021*BW^0.716) 
+head(yak1)
+
+yak1<-yak1 %>% mutate(totalkgDM_perday= value*kgDM_perday)
+yak1<-yak1 %>% mutate(totalkgDM_peryear= totalkgDM_perday*365)
+yak1<-yak1 %>% mutate(totalMtDM_peryear= totalkgDM_peryear/10^9)
+write.csv(yak1, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//yak_state_DM.csv")
+
+national_yak_MtDM_peryear<- yak1 %>% summarise(sum=sum(totalMtDM_peryear, na.rm = TRUE))
+national_yak_MtDM_peryear #~0.06498 MtDM per year
+
+state_yak_DM<- yak1 %>% group_by(State_Name) %>% summarise(TotalMtDM_peryear=sum(totalMtDM_peryear))
+
+p<- ggplot(data = state_yak_DM, aes(x= State_Name, y= TotalMtDM_peryear))+ geom_bar(stat = "identity")+ggtitle ("Mithun and Yak Dry Matter intake (Mt/yr)")+coord_flip()
+p
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//state_yak_totalDM_peryear.png", dpi=300)
