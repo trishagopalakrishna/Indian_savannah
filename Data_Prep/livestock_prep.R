@@ -1,7 +1,7 @@
 ### In this script I clean the web scraped livestock data from animal husbandry statistics website, for each district
 ### Started on- 03/02/2021
 ### Last edit made on- 
-### Last edit made- calculated dry matter intake
+### Last edit made- Calculated grass deduction from dry matter intake
 
 ###############################################################################################
 
@@ -1373,3 +1373,545 @@ state_yak_DM<- yak1 %>% group_by(State_Name) %>% summarise(TotalMtDM_peryear=sum
 p<- ggplot(data = state_yak_DM, aes(x= State_Name, y= TotalMtDM_peryear))+ geom_bar(stat = "identity")+ggtitle ("Mithun and Yak Dry Matter intake (Mt/yr)")+coord_flip()
 p
 ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//state_yak_totalDM_peryear.png", dpi=300)
+
+remove(yak1,buffalo1, cattle1, camel1, goat1, horse1, national_buffalo_MtDM_peryear, national_camel_MtDM_peryear,
+       national_cattle_MtDM_peryear, national_goat_MtDM_peryear, national_sheep_MtDM_peryear, national_yak_MtDM_peryear,p,sheep1,
+       national_horse_MtDM_peryear)
+remove(national)
+###############################################################################################
+#Comparison of GLW3 DM calculations vs India Census DM calculations for each livestock
+
+##1. Cattle 
+india_states<-readOGR("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Admin//gadm36_IND_shp//gadm36_IND_1.shp")
+india_shp
+(india_states)
+proj4string(india_states)<-CRS("+proj=longlat +datum=WGS84 +no_defs") 
+india_states    
+india_states<-st_as_sf(india_states)
+india_states<- india_states %>% mutate(Final_State_Name= case_when(
+  NAME_1=="Andaman and Nicobar"~"Andaman and Nicobar",
+  NAME_1=="Andhra Pradesh" ~ "Andhra Pradesh",
+  NAME_1=="Arunachal Pradesh" ~ "Arunachal Pradesh",
+  NAME_1=="Assam" ~ "Assam",
+  NAME_1=="Bihar"~ "Bihar",
+  NAME_1=="Chandigarh"~"Punjab",
+  NAME_1=="Chhattisgarh"~"Chhattisgarh",
+  NAME_1=="Dadra and Nagar Haveli"~ "Gujarat",
+  NAME_1=="Daman and Diu"~ "Gujarat",
+  NAME_1=="Goa"~ "Goa",
+  NAME_1=="Gujarat"~"Gujarat",
+  NAME_1=="Haryana"~"Haryana",
+  NAME_1=="Himachal Pradesh"~ "Himachal Pradesh",
+  NAME_1=="Jammu and Kashmir"~ "Jammu and Kashmir",
+  NAME_1=="Jharkhand"~"Jharkhand",
+  NAME_1=="Karnataka"~"Karnataka",
+  NAME_1=="Kerala"~"Kerala",
+  NAME_1=="Lakshadweep"~"Lakshadweep",
+  NAME_1=="Madhya Pradesh"~"Madhya Pradesh",
+  NAME_1=="Maharashtra"~ "Maharashtra",
+  NAME_1=="Manipur"~"Manipur",
+  NAME_1=="Meghalaya"~"Meghalaya",
+  NAME_1=="Mizoram"~"Mizoram",
+  NAME_1=="Nagaland"~"Nagaland",
+  NAME_1=="NCT of Delhi"~"NCT of Delhi",
+  NAME_1=="Odisha"~"Odisha",
+  NAME_1=="Puducherry"~"Tamil Nadu",
+  NAME_1=="Punjab"~"Punjab",
+  NAME_1=="Rajasthan"~"Rajasthan",
+  NAME_1=="Sikkim"~"Sikkim",
+  NAME_1=="Tamil Nadu"~"Tamil Nadu",
+  NAME_1=="Telangana"~"Telangana",
+  NAME_1=="Tripura"~"Tripura",
+  NAME_1=="Uttar Pradesh"~"Uttar Pradesh",
+  NAME_1=="Uttarakhand"~"Uttarakhand",
+  NAME_1=="West Bengal"~ "West Bengal"
+))
+india_states
+
+india_states_prepped<-india_states %>% group_by(Final_State_Name) %>%summarise()
+unique(india_states_prepped$Final_State_Name)
+st_write(india_states_prepped, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Admin//india_states_prepped.shp")
+remove(india_states)
+
+cattle_state<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//cattle_state_DM.csv")
+state_cattle<- cattle_state %>% group_by(State_Name) %>% summarise(totalMtDM_peryear=sum(totalMtDM_peryear, na.rm = TRUE))
+remove(cattle_state)
+head(state_cattle)
+state_cattle<- state_cattle %>% mutate(name=str_replace_all(State_Name, c("Andhra_Pradesh" ="Andhra Pradesh",
+                                                                          "Arunachal_Pradesh"= "Arunachal Pradesh",
+                                                                          "Himachal_Pradesh"="Himachal Pradesh",
+                                                                          "Jammu_and_Kashmir"="Jammu and Kashmir",
+                                                                          "Madhya_Pradesh"="Madhya Pradesh",
+                                                                          "Tamil_Nadu"="Tamil Nadu",
+                                                                          "Uttar_Pradesh"= "Uttar Pradesh")))
+
+cattle1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//cattle_DM.tif")
+cattle1
+s_cattle_MtDM_year<-raster::extract(cattle1, india_states_prepped, fun=sum,na.rm=TRUE, df=TRUE,sp=TRUE )
+sum(s_cattle_MtDM_year$cattle_DM) ##90.129 MtDM/year as opposed to 928 MtDM per year. This difference is huge!
+s_cattle_MtDM_year<-st_as_sf(s_cattle_MtDM_year)
+
+s_cattle_data<-st_drop_geometry(s_cattle_MtDM_year) 
+remove(s_cattle_MtDM_year)
+head(s_cattle_data)
+
+s_cattle_data<-left_join(s_cattle_data, state_cattle, by=c("Final_State_Name"= "name"))
+head(s_cattle_data)
+s_cattle_data_pivot<-pivot_longer(s_cattle_data, c(2,4))
+head(s_cattle_data_pivot)
+s_cattle_data_pivot<-s_cattle_data_pivot %>% mutate(name=str_replace_all(name,c("cattle_DM"="GLW 3+ Wolf et al., 2013",
+                                                                                "totalMtDM_peryear"="India Census Data+ IPCC equations")))
+
+a<-ggplot(s_cattle_data_pivot, aes(Final_State_Name, value)) +   
+  geom_bar(aes(fill = name), position = "dodge", stat="identity")+theme(axis.text.x = element_text(angle=90))+
+  xlab("States")+ylab("Mt Dry Matter Intake per year")+scale_fill_manual(values = c("#CC0066", "#666666"))+
+  theme(legend.title = element_blank())+ggtitle("Cattle")
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//descrepancy_cattleDM_GLW3_IndiaCensus.png", dpi=300)
+
+s_cattle_data<- s_cattle_data %>% mutate(percentagediff=ifelse(is.na(totalMtDM_peryear),NA,
+                                                               (cattle_DM-totalMtDM_peryear)/(cattle_DM)*100))
+
+remove(cattle1, s_cattle_data_filter, state_cattle)
+###All values from GLW3 and Wolf et al equation with average BW of adult females and males is 
+### less than india census method by a lot! Ask someone
+
+##2. Buffalo
+buffalo1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//buffalo_DM.tif")
+buffalo1
+s_buffalo_MtDM_year<-raster::extract(buffalo1, india_states_prepped, fun=sum,na.rm=TRUE, df=TRUE,sp=TRUE )
+sum(s_buffalo_MtDM_year$buffalo_DM) ##69.1916 MtDM/year as opposed to 24.9377 MtDM per year. Not too bad, but not too good either
+s_buffalo_MtDM_year<-st_as_sf(s_buffalo_MtDM_year)
+
+s_buffalo_data<-st_drop_geometry(s_buffalo_MtDM_year) 
+remove(s_buffalo_MtDM_year)
+head(s_buffalo_data)
+
+buffalo_state<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//buffalo_state_DM.csv")
+state_buffalo<- buffalo_state %>% group_by(State_Name) %>% summarise(totalMtDM_peryear=sum(totalMtDM_peryear, na.rm = TRUE))
+remove(buffalo_state)
+head(state_buffalo)
+state_buffalo<- state_buffalo %>% mutate(name=str_replace_all(State_Name, c("Andhra_Pradesh" ="Andhra Pradesh",
+                                                                          "Arunachal_Pradesh"= "Arunachal Pradesh",
+                                                                          "Himachal_Pradesh"="Himachal Pradesh",
+                                                                          "Jammu_and_Kashmir"="Jammu and Kashmir",
+                                                                          "Madhya_Pradesh"="Madhya Pradesh",
+                                                                          "Tamil_Nadu"="Tamil Nadu",
+                                                                          "Uttar_Pradesh"= "Uttar Pradesh")))
+
+s_buffalo_data<-left_join(s_buffalo_data, state_buffalo, by=c("Final_State_Name"= "name"))
+head(s_buffalo_data)
+s_buffalo_data_pivot<-pivot_longer(s_buffalo_data, c(2,4))
+head(s_buffalo_data_pivot)
+s_buffalo_data_pivot<-s_buffalo_data_pivot %>% mutate(name=str_replace_all(name,c("buffalo_DM"="GLW 3+ Wolf et al., 2013 (average BW)",
+                                                                                "totalMtDM_peryear"="India Census Data+ Wolf et al., 2013(specific BW)")))
+
+b<-ggplot(s_buffalo_data_pivot, aes(Final_State_Name, value)) +   
+  geom_bar(aes(fill = name), position = "dodge", stat="identity")+theme(axis.text.x = element_text(angle=90))+
+  xlab("States")+ylab("Mt Dry Matter Intake per year")+scale_fill_manual(values = c("#CC0066", "#666666"))+
+  theme(legend.title = element_blank())+ ggtitle("Buffalo")
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//descrepancy_buffaloDM_GLW3_IndiaCensus.png", dpi=300)
+
+remove(buffalo1, state_buffalo)
+##3. Sheep
+sheep1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//sheep_DM.tif")
+sheep1
+s_sheep_MtDM_year<-raster::extract(sheep1, india_states_prepped, fun=sum,na.rm=TRUE, df=TRUE,sp=TRUE )
+sum(s_sheep_MtDM_year$sheep_DM) ##6.4488MtDM/year as opposed to 4.060651 MtDM per year. Not too bad, but not too good either
+s_sheep_MtDM_year<-st_as_sf(s_sheep_MtDM_year)
+
+s_sheep_data<-st_drop_geometry(s_sheep_MtDM_year) 
+remove(s_sheep_MtDM_year)
+head(s_sheep_data)
+
+sheep_state<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//sheep_state_DM.csv")
+state_sheep<- sheep_state %>% group_by(State_Name) %>% summarise(totalMtDM_peryear=sum(totalMtDM_peryear, na.rm = TRUE))
+remove(sheep_state)
+head(state_sheep)
+state_sheep<- state_sheep %>% mutate(name=str_replace_all(State_Name, c("Andhra_Pradesh" ="Andhra Pradesh",
+                                                                            "Arunachal_Pradesh"= "Arunachal Pradesh",
+                                                                            "Himachal_Pradesh"="Himachal Pradesh",
+                                                                            "Jammu_and_Kashmir"="Jammu and Kashmir",
+                                                                            "Madhya_Pradesh"="Madhya Pradesh",
+                                                                            "Tamil_Nadu"="Tamil Nadu",
+                                                                            "Uttar_Pradesh"= "Uttar Pradesh")))
+
+s_sheep_data<-left_join(s_sheep_data, state_sheep, by=c("Final_State_Name"= "name"))
+head(s_sheep_data)
+s_sheep_data_pivot<-pivot_longer(s_sheep_data, c(2,4))
+head(s_sheep_data_pivot)
+s_sheep_data_pivot<-s_sheep_data_pivot %>% mutate(name=str_replace_all(name,c("sheep_DM"="GLW 3+ Wolf et al., 2013 (average BW)",
+                                                                                  "totalMtDM_peryear"="India Census Data+ Wolf et al., 2013(specific BW)")))
+
+c<-ggplot(s_sheep_data_pivot, aes(Final_State_Name, value)) +   
+  geom_bar(aes(fill = name), position = "dodge", stat="identity")+theme(axis.text.x = element_text(angle=90))+
+  xlab("States")+ylab("Mt Dry Matter Intake per year")+scale_fill_manual(values = c("#CC0066", "#666666"))+
+  theme(legend.title = element_blank())+ ggtitle("Sheep")
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//descrepancy_sheepDM_GLW3_IndiaCensus.png", dpi=300)
+
+remove(sheep1, state_sheep)
+
+##4. Goat
+goat1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//goat_DM.tif")
+goat1
+s_goat_MtDM_year<-raster::extract(goat1, india_states_prepped, fun=sum,na.rm=TRUE, df=TRUE,sp=TRUE)
+sum(s_goat_MtDM_year$goat_DM) ##8.865389 MtDM/year as opposed to 4.88 MtDM per year MtDM per year. Its twice! 
+s_goat_MtDM_year<-st_as_sf(s_goat_MtDM_year)
+
+s_goat_data<-st_drop_geometry(s_goat_MtDM_year) 
+remove(s_goat_MtDM_year)
+head(s_goat_data)
+
+goat_state<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//goat_state_DM.csv")
+state_goat<- goat_state %>% group_by(State_Name) %>% summarise(totalMtDM_peryear=sum(totalMtDM_peryear, na.rm = TRUE))
+remove(goat_state)
+head(state_goat)
+state_goat<- state_goat %>% mutate(name=str_replace_all(State_Name, c("Andhra_Pradesh" ="Andhra Pradesh",
+                                                                        "Arunachal_Pradesh"= "Arunachal Pradesh",
+                                                                        "Himachal_Pradesh"="Himachal Pradesh",
+                                                                        "Jammu_and_Kashmir"="Jammu and Kashmir",
+                                                                        "Madhya_Pradesh"="Madhya Pradesh",
+                                                                        "Tamil_Nadu"="Tamil Nadu",
+                                                                        "Uttar_Pradesh"= "Uttar Pradesh")))
+
+s_goat_data<-left_join(s_goat_data, state_goat, by=c("Final_State_Name"= "name"))
+head(s_goat_data)
+s_goat_data_pivot<-pivot_longer(s_goat_data, c(2,4))
+head(s_goat_data_pivot)
+s_goat_data_pivot<-s_goat_data_pivot %>% mutate(name=str_replace_all(name,c("goat_DM"="GLW 3+ Wolf et al., 2013 (average BW)",
+                                                                              "totalMtDM_peryear"="India Census Data+ Wolf et al., 2013(specific BW)")))
+
+d<-ggplot(s_goat_data_pivot, aes(Final_State_Name, value)) +   
+  geom_bar(aes(fill = name), position = "dodge", stat="identity")+theme(axis.text.x = element_text(angle=90))+
+  xlab("States")+ylab("Mt Dry Matter Intake per year")+scale_fill_manual(values = c("#CC0066", "#666666"))+
+  theme(legend.title = element_blank())+ ggtitle("Goat")
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//descrepancy_goatDM_GLW3_IndiaCensus.png", dpi=300)
+
+remove(state_goat, goat1)
+##5. Horse
+horse1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Processed//horse_DM.tif")
+horse1
+s_horse_MtDM_year<-raster::extract(horse1, india_states_prepped, fun=sum,na.rm=TRUE, df=TRUE,sp=TRUE)
+sum(s_horse_MtDM_year$horse_DM) ##0.3572556 MtDM/year as opposed to 0.0081197 MtDM per year MtDM per year. Ok not so close still
+s_horse_MtDM_year<-st_as_sf(s_horse_MtDM_year)
+
+s_horse_data<-st_drop_geometry(s_horse_MtDM_year) 
+remove(s_horse_MtDM_year)
+head(s_horse_data)
+
+horse_state<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//Indian_Census_Processed//horse_state_DM.csv")
+state_horse<- horse_state %>% group_by(State_Name) %>% summarise(totalMtDM_peryear=sum(totalMtDM_peryear, na.rm = TRUE))
+remove(horse_state)
+head(state_horse)
+state_horse<- state_horse %>% mutate(name=str_replace_all(State_Name, c("Andhra_Pradesh" ="Andhra Pradesh",
+                                                                      "Arunachal_Pradesh"= "Arunachal Pradesh",
+                                                                      "Himachal_Pradesh"="Himachal Pradesh",
+                                                                      "Jammu_and_Kashmir"="Jammu and Kashmir",
+                                                                      "Madhya_Pradesh"="Madhya Pradesh",
+                                                                      "Tamil_Nadu"="Tamil Nadu",
+                                                                      "Uttar_Pradesh"= "Uttar Pradesh")))
+
+s_horse_data<-left_join(s_horse_data, state_horse, by=c("Final_State_Name"= "name"))
+head(s_horse_data)
+s_horse_data_pivot<-pivot_longer(s_horse_data, c(2,4))
+head(s_horse_data_pivot)
+s_horse_data_pivot<-s_horse_data_pivot %>% mutate(name=str_replace_all(name,c("horse_DM"="GLW 3+ Wolf et al., 2013 (average BW)",
+                                                                            "totalMtDM_peryear"="India Census Data+ Wolf et al., 2013(specific BW)")))
+
+e<-ggplot(s_horse_data_pivot, aes(Final_State_Name, value)) +   
+  geom_bar(aes(fill = name), position = "dodge", stat="identity")+theme(axis.text.x = element_text(angle=90))+
+  xlab("States")+ylab("Mt Dry Matter Intake per year")+scale_fill_manual(values = c("#CC0066", "#666666"))+
+  theme(legend.title = element_blank())+ ggtitle("Horse")
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//descrepancy_horseDM_GLW3_IndiaCensus.png", dpi=300)
+
+remove(state_horse, horse1)
+
+library(ggpubr)
+ggarrange(a,b,c,d,e, ncol = 2, nrow = 3)
+
+##Looking at the graphs, it seems like except for cattle, the GLW data with average BW provides higher total dry matter intake (pink)
+## than indian census data. Additionally, GLW data is more complete than Indian census data. 
+## For cattle, Indian census data with IPCC equations predicts a lot more dry matter intake (by a lot more). Lot of state variation 
+## but overall this is the bottom line
+
+## Discrpeency for cattle is clear. It is the IPCC equations! They seem to predict a lot more DM for different age groups of cattle
+## But for the remaining, its interesting that avergae BW of adult male and female provides more DM than finer data. I guess
+## this is expected. However considering the completness of GW data, I am inclined to use it instead of India census data. 
+
+remove(a,b,c,d,e)
+
+head(s_cattle_data)
+national_cattle<-s_cattle_data %>% summarise_at(.vars = vars(cattle_DM, totalMtDM_peryear),
+                                                .funs = c(sum="sum"), na.rm= TRUE)
+national_cattle
+national_cattle<-national_cattle %>%  rename(GLW_WolfEqn_AvBW=cattle_DM_sum,
+                                             IndiaCensus_WolfEqn_SpecificBW=totalMtDM_peryear_sum)
+national_cattle<- national_cattle %>% mutate(Type="Cattle")
+
+
+national_buffalo<-s_buffalo_data %>% summarise_at(.vars = vars(buffalo_DM, totalMtDM_peryear),
+                                                      .funs = c(sum="sum"), na.rm=TRUE)
+national_buffalo<-national_buffalo %>%  rename(GLW_WolfEqn_AvBW=buffalo_DM_sum,
+                                             IndiaCensus_WolfEqn_SpecificBW=totalMtDM_peryear_sum)
+national_buffalo<- national_buffalo %>% mutate(Type="Buffalo")
+
+national_sheep<-s_sheep_data %>% summarise_at(.vars = vars(sheep_DM, totalMtDM_peryear),
+                                                  .funs = c(sum="sum"), na.rm=TRUE)
+national_sheep<-national_sheep %>%  rename(GLW_WolfEqn_AvBW=sheep_DM_sum,
+                                             IndiaCensus_WolfEqn_SpecificBW=totalMtDM_peryear_sum)
+national_sheep<- national_sheep %>% mutate(Type="Sheep")
+
+national_goat<-s_goat_data %>% summarise_at(.vars = vars(goat_DM, totalMtDM_peryear),
+                                                  .funs = c(sum="sum"), na.rm=TRUE)
+national_goat<-national_goat %>%  rename(GLW_WolfEqn_AvBW=goat_DM_sum,
+                                             IndiaCensus_WolfEqn_SpecificBW=totalMtDM_peryear_sum)
+national_goat<- national_goat %>% mutate(Type="Goat")
+
+national_horse<-s_horse_data %>% summarise_at(.vars = vars(horse_DM, totalMtDM_peryear),
+                                                  .funs = c(sum="sum"), na.rm=TRUE)
+national_horse<-national_horse %>%  rename(GLW_WolfEqn_AvBW=horse_DM_sum,
+                                             IndiaCensus_WolfEqn_SpecificBW=totalMtDM_peryear_sum)
+national_horse<- national_horse %>% mutate(Type="Horse")
+
+national_livestockDM<-bind_rows(national_cattle, national_buffalo, national_sheep, national_goat, national_horse)
+head(national_livestockDM)
+
+national_livestockDM_pivot<-pivot_longer(national_livestockDM, 1:2)
+national_livestockDM_pivot
+
+ggplot(national_livestockDM_pivot, aes(Type, value)) +   
+  geom_bar(aes(fill = name), position = "dodge", stat="identity")+theme(axis.text.x = element_text(angle=90))+
+  xlab("Livestock Type")+ylab("Mt Dry Matter Intake per year")+scale_fill_manual(values = c("#CC0066", "#666666"))+
+  theme(legend.title = element_blank())+ ggtitle("National Estimates of Dry Matter Intake")
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//descrepancy_national_allDM_GLW3_IndiaCensus.png", dpi= 300)
+#####################################################################################################################
+
+## Confirmed from Gilbert et al., 2018 that to calculate density I need to divide each raster which is absolute animal numbers
+## (when summed within census polygon) with other area raster provided for each livestock 
+
+##1. Cattle
+cattle<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//cattle_files//6_Ct_2010_Aw.tif")
+cattle
+plot(cattle)
+cattle_area<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//cattle_files//8_Areakm.tif")
+cattle_area #sqkm/pixel
+
+cattle_density_stack<-stack(cattle, cattle_area)
+cattle_density_stack_india<-crop(cattle_density_stack, india_shp)
+cattle_density_stack_india<-mask(cattle_density_stack_india, india_shp)
+
+cattle_density_final<-cattle_density_stack_india[[1]]/cattle_density_stack_india[[2]]
+cattle_density_final #animals/sq km
+plot(cattle_density_final)
+
+##Dry Matter- Wolf eqn 
+cattle_density_DM<- cattle_density_final * (0.021*final_cattle_bw^0.716)* 365 # Assume eating is everyday
+cattle_density_DM # total kgDM/yr/sqkm
+cattle_density_DM_Mt<-cattle_density_DM/10^9
+plot(cattle_density_DM_Mt)
+writeRaster(cattle_density_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//cattle_density_DM.tif")
+
+remove(cattle, cattle_area, cattle_density_stack, cattle_density_stack_india, cattle_density_final)
+
+##2. Buffalo
+buffalo<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//buffalo_files//6_Bf_2010_Aw.tif")
+buffalo
+plot(buffalo)
+buffalo_area<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//buffalo_files//8_Areakm.tif")
+buffalo_area #sqkm/pixel
+
+buffalo_density_stack<-stack(buffalo, buffalo_area)
+buffalo_density_stack_india<-crop(buffalo_density_stack, india_shp)
+buffalo_density_stack_india<-mask(buffalo_density_stack_india, india_shp)
+
+buffalo_density_final<-buffalo_density_stack_india[[1]]/buffalo_density_stack_india[[2]]
+buffalo_density_final #animals/sq km
+plot(buffalo_density_final)
+
+##Dry Matter- Wolf eqn 
+buffalo_density_DM<- buffalo_density_final * (0.021*final_buffalo_bw^0.716)* 365 # Assume eating is everyday
+buffalo_density_DM # total kgDM/yr/sqkm
+buffalo_density_DM_Mt<-buffalo_density_DM/10^9
+plot(buffalo_density_DM_Mt)
+writeRaster(buffalo_density_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//buffalo_density_DM.tif")
+
+remove(buffalo, buffalo_area, buffalo_density_stack, buffalo_density_stack_india, buffalo_density_final)
+
+##3. sheep
+sheep<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//sheep_files//6_Sh_2010_Aw.tif")
+sheep
+plot(sheep)
+sheep_area<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//sheep_files//8_Areakm.tif")
+sheep_area #sqkm/pixel
+
+sheep_density_stack<-stack(sheep, sheep_area)
+sheep_density_stack_india<-crop(sheep_density_stack, india_shp)
+sheep_density_stack_india<-mask(sheep_density_stack_india, india_shp)
+
+sheep_density_final<-sheep_density_stack_india[[1]]/sheep_density_stack_india[[2]]
+sheep_density_final #animals/sq km
+plot(sheep_density_final)
+
+##Dry Matter- Wolf eqn 
+sheep_density_DM<- sheep_density_final * (0.021*final_sheep_bw^0.716)* 365 # Assume eating is everyday
+sheep_density_DM # total kgDM/yr/sqkm
+sheep_density_DM_Mt<-sheep_density_DM/10^9
+plot(sheep_density_DM_Mt)
+writeRaster(sheep_density_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//sheep_density_DM.tif")
+
+remove(sheep, sheep_area, sheep_density_stack, sheep_density_stack_india, sheep_density_final)
+
+##4. goat
+goat<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//goat_files//6_Gt_2010_Aw.tif")
+goat
+plot(goat)
+goat_area<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//goat_files//8_Areakm.tif")
+goat_area #sqkm/pixel
+
+goat_density_stack<-stack(goat, goat_area)
+goat_density_stack_india<-crop(goat_density_stack, india_shp)
+goat_density_stack_india<-mask(goat_density_stack_india, india_shp)
+
+goat_density_final<-goat_density_stack_india[[1]]/goat_density_stack_india[[2]]
+goat_density_final #animals/sq km
+plot(goat_density_final)
+
+##Dry Matter- Wolf eqn 
+goat_density_DM<- goat_density_final * (0.021*final_goat_bw^0.716)* 365 # Assume eating is everyday
+goat_density_DM # total kgDM/yr/sqkm
+goat_density_DM_Mt<-goat_density_DM/10^9
+plot(goat_density_DM_Mt)
+writeRaster(goat_density_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//goat_density_DM.tif")
+
+remove(goat, goat_area, goat_density_stack, goat_density_stack_india, goat_density_final)
+
+##4. horse
+horse<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//horses_files//6_Ho_2010_Aw.tif")
+horse
+plot(horse)
+horse_area<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Domestic_Livestock//GriddedLivestock//horses_files//8_Areakm.tif")
+horse_area #sqkm/pixel
+
+horse_density_stack<-stack(horse, horse_area)
+horse_density_stack_india<-crop(horse_density_stack, india_shp)
+horse_density_stack_india<-mask(horse_density_stack_india, india_shp)
+
+horse_density_final<-horse_density_stack_india[[1]]/horse_density_stack_india[[2]]
+horse_density_final #animals/sq km
+plot(horse_density_final)
+
+##Dry Matter- Wolf eqn 
+horse_density_DM<- horse_density_final * (0.021*final_horse_bw^0.716)* 365 # Assume eating is everyday
+horse_density_DM # total kgDM/yr/sqkm
+horse_density_DM_Mt<-horse_density_DM/10^9
+plot(horse_density_DM_Mt)
+writeRaster(horse_density_DM_Mt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//horse_density_DM.tif")
+
+remove(horse, horse_area, horse_density_stack, horse_density_stack_india, horse_density_final)
+
+
+asia<- st_read("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper1//Data//Admin//Longitude_Graticules_and_World_Countries_Boundaries-shp//asian_countries_map2.shp") 
+india_boundary_roy<-st_read("C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper1\\Data\\Admin\\gadm36_IND_shp\\India_bound.shp")
+
+map_extent<- st_bbox(c(xmin=63.7, xmax=98.3,
+                       ymin=5.8, ymax=39), crs=4326) %>% st_as_sfc()
+
+cattle_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(cattle_density_DM_Mt) + tm_raster(style='quantile', n=8,palette = "YlOrRd",title="Total Cattle Dry Matter Intake (Mt/sqkm/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+cattle_map
+
+buffalo_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(buffalo_density_DM_Mt) + tm_raster(style='quantile', n=8,palette = "Purples",title="Total Buffalo Dry Matter Intake (Mt/sqkm/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+buffalo_map
+
+goat_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(goat_density_DM_Mt) + tm_raster(style='quantile', n=8,palette = "Reds",title="Total Goat Dry Matter Intake (Mt/sqkm/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+goat_map
+
+sheep_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(sheep_density_DM_Mt) + tm_raster(style='quantile', n=8,palette = "Greys",title="Total Sheep Dry Matter Intake (Mt/sqkm/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+sheep_map
+
+horse_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(horse_density_DM_Mt) + tm_raster(style='quantile', n=8,palette = "Blues",title="Total Horse Dry Matter Intake (Mt/sqkm/yr)")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+horse_map
+
+livestock_density_DM<-tmap_arrange(cattle_map, buffalo_map, goat_map,sheep_map, horse_map, ncol=3)
+tmap_save(livestock_density_DM,"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//livestock_density_DM.png", dpi = 300)
+
+
+################################################################################################################
+# Figuring out the proportion of grass in the Dry Matter intake by livestock type
+
+# From Heraro et al., 2013 Fig S1- India has majority MIA- Mixed Irrigated- Arid and SemiArid Tropics and Subtropics,
+# MIH- Mixed Irrigated-  Humid and Subhumid Tropics systems of livestock distribution systems (shades of blue). Only a bit of NW i.e.
+# part of Rajasthan and Punjab is yellow- LGA- Livestock only Arid and SemiArid Tropics and Subtropics. But I am going to assume
+# that it is mostly MIA and MIH.
+
+#From Herraro et al., 2013 Table S10-
+
+##1 Dairy Cattle (BOVD) in SAS (South Asia which is mostly India) for the above two systems- Grass %  30 & 35.
+##2 Beef Cattle and dairy (BOVO)- Grass % 33 & 42
+##3 Small Ruminants dairy (SGTD)- Grass % 10 & 72 (very wide)
+##4 Small Ruminants meat (SGTO)- Grass % 36 % 48 
+
+## Cattle==Dairy Cattle
+## Buffalo== cannot assign
+## Small ruminants- sheep and goat= Small Ruminants Meat and Diary
+## Horse== cannot assign (assume stover)
+####Mean values
+
+cattle_density_DM_Mt<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//cattle_density_DM.tif")
+buffalo_density_DM_Mt<- raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//buffalo_density_DM.tif")
+sheep_density_DM_Mt<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//sheep_density_DM.tif")
+goat_density_DM_Mt<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//goat_density_DM.tif")
+horse_density_DM_Mt<- raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_Density_Processed//horse_density_DM.tif")
+
+plot(cattle_density_DM_Mt)
+plot(buffalo_density_DM_Mt)
+plot(sheep_density_DM_Mt)
+plot(goat_density_DM_Mt)
+plot(horse_density_DM_Mt)
+
+cattle_density_DMgrass_t<-cattle_density_DM_Mt*10^6 *mean(0.3,0.35)
+writeRaster(cattle_density_DMgrass_t, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_DensityGrass_Processed//cattle_density_DMgrass_t.tif")
+buffalo_density_DM_t<-buffalo_density_DM_Mt*10^6
+writeRaster(buffalo_density_DM_t, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_DensityGrass_Processed//buffalo_density_DM_t.tif")
+sheep_density_DMgrass_t<-sheep_density_DM_Mt*10^6 * mean(0.1,0.72,0.36,0.48)
+writeRaster(sheep_density_DMgrass_t, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_DensityGrass_Processed//sheep_density_DMgrass_t.tif")
+goat_density_DMgrass_t<-goat_density_DM_Mt*10^6 * mean(0.1,0.72,0.36,0.48)
+writeRaster(goat_density_DMgrass_t, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_DensityGrass_Processed//goat_density_DMgrass_t.tif")
+horse_density_DM_t<-horse_density_DM_Mt*10^6
+writeRaster(horse_density_DM_t, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_DensityGrass_Processed//horse_density_DM_t.tif")
+
+cattle_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(cattle_density_DMgrass_t) + tm_raster(style='quantile', n=6,palette = "YlOrRd", title="")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout( title="Total Cattle Grass Dry Matter Intake (t/sqkm/yr)",legend.show = TRUE)
+cattle_map
+
+buffalo_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(buffalo_density_DM_t) + tm_raster(style='quantile', n=6,palette = "Purples",title="")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(title="Total Buffalo Dry Matter Intake (t/sqkm/yr)",legend.title.size=1, legend.show = TRUE)
+buffalo_map
+
+goat_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(goat_density_DMgrass_t) + tm_raster(style='quantile', n=6,palette = "Reds",title="")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(title="Total Goat Grass Dry Matter Intake (t/sqkm/yr)",legend.title.size=1,legend.show = TRUE)
+goat_map
+
+sheep_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(sheep_density_DMgrass_t) + tm_raster(style='quantile', n=6,palette = "Greys",title="")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(title="Total Sheep Grass Dry Matter Intake (t/sqkm/yr)",legend.title.size=1, legend.show = TRUE)
+sheep_map
+
+horse_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(horse_density_DM_t) + tm_raster(style='quantile', n=6,palette = "Blues",title="")+ tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(title="Total Horse Dry Matter Intake (t/sqkm/yr)",legend.title.size=1,legend.show = TRUE)
+horse_map
+
+livestock_density_DM<-tmap_arrange(cattle_map, buffalo_map, goat_map,sheep_map, horse_map, ncol=3)
+tmap_save(livestock_density_DM,"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Domestic_Livestock_Processed//GriddedLivestock_DensityGrass_Processed//livestock_density_DMgrass.png", dpi = 300)
