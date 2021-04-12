@@ -15,9 +15,12 @@ library(sf)
 library(tmap)
 library(RColorBrewer)
 library(viridis)
+library(terra)
 
 rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
               tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+10)
+terraOptions(memfrac=0.5, tempdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+             progress=10)
 memory.limit(size=20000)
 ############################################################################################### Data Extraction
 #Following this website https://www.r-bloggers.com/2013/11/working-with-hdf-files-in-r-example-pathfinder-sst-data/
@@ -87,7 +90,7 @@ year2016<-yearly_burnedarea("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus36
 remove(year1997, year1998, year1999, year2000, year2001, year2002, year2003, year2004, year2005, year2006, year2007, year2008,
        year2009, year2010, year2011, year2012, year2013, year2014, year2015, year2016,i, lat, lon, temp, tmp, BA_list)
 ############################################################################################### Data Processing
-input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Fire//GFEDvs//BurnedArea_rasters"
+input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Fire//GFEDvs//BurnedArea_rasters//"
 burnedarea_month_input_list <- list.files(path= input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
 burnedarea_month_input_list
 #install.packages("gtools")
@@ -103,7 +106,7 @@ binary_function<- function (r_s){
   return(r_s)
 }
 Sys.time()
-burnedarea_reorder_month_binary<- calc(burnedarea_reorder_month, fun = binary_function); Sys.time() #8 minutes
+burnedarea_reorder_month_binary<- calc(burnedarea_reorder_month, fun = binary_function); Sys.time() #6-8 minutes
 burnedarea_reorder_month_binary
 
 months<-rep(c(1:12), times=20)
@@ -111,13 +114,39 @@ years<-rep(c(1997:2016), each=12)
 #output_dir<-"C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper2\\Data\\Fire\\GFEDvs\\Binaryburn_rasters"
 #for (i in 1:nlayers(burnedarea_reorder_month_binary)){
 #  writeRaster(burnedarea_reorder_month_binary[[i]], filename=file.path(paste0(output_dir,"\\", years[[i]],"_", months[i])), bylayer=TRUE,format="GTiff")
-#}
+#} 2min
+remove(burnedarea_reorder_month, burnedarea_reorder_month_binary, burnedarea_month_input_list,i, input_path, months,output_dir, years, binary_function)
+
+input_path<-"C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper2\\Data\\Fire\\GFEDvs\\Binaryburn_rasters\\"
+burnedarealist <- list.files(path= input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+burnedarealist
+
+library(gtools)
+burnedarea_reorder_month_binary <- stack(mixedsort(burnedarealist))
+
+#install.packages("av")
+library(av)
+
+asia<- st_read("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper1//Data//Admin//Longitude_Graticules_and_World_Countries_Boundaries-shp//asian_countries_map2.shp") 
+india_boundary_roy<-st_read("C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper1\\Data\\Admin\\gadm36_IND_shp\\India_bound.shp")
+
+map_extent<- st_bbox(c(xmin=63.7, xmax=98.3,
+                       ymin=5.8, ymax=39), crs=4326) %>% st_as_sfc()
+
+anim_burnarea_gfed<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(burnedarea_reorder_month_binary) + tm_raster(title="")+ tm_facets(nrow=1, ncol=1, free.coords = FALSE)+
+  tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(title= "Burn/No Burn", legend.show = TRUE) 
+
+Sys.time();tmap_animation(anim_burnarea_gfed, filename = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Fire//gfed_burnarea.mp4",
+               delay = 50, loop = TRUE, restart.delay = 500,
+               width = 900, height = 900, dpi = 150) ;Sys.time() #10-12 min
 
 Sys.time()
-burnfreq<- calc(burnedarea_reorder_month_binary, fun=sum); Sys.time()
+burnfreq<- terra::app(rast(burnedarea_reorder_month_binary), fun=sum); Sys.time()
 burnfreq
 plot(burnfreq)
-#riteRaster(burnfreq, "C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper2\\Data\\Fire\\GFEDvs\\Binaryburn_rasters\\burnfreq.tif")
+#writeRaster(burnfreq, "C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper2\\Data\\Fire\\GFEDvs\\Binaryburn_rasters\\burnfreq.tif")
 burnfreq<-raster("C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper2\\Data\\Fire\\GFEDvs\\Binaryburn_rasters\\burnfreq.tif")
 
 burnfreq[burnfreq==0]<-NA
