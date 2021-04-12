@@ -1,0 +1,145 @@
+---
+title: "studyarea_prep"
+author: "Trisha Gopalakrishna"
+date: "30/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(RColorBrewer)
+library(lattice)
+library(tidyverse)
+library(raster)
+library(rgdal)
+library(ggplot2)
+library(sf)
+library(ncdf4)
+library(tmap)
+library(RColorBrewer)
+library(viridis)
+library(ncdf4)
+library(terra)
+library(gtools)
+
+terraOptions(memfrac=0.5, tempdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+             progress=10)
+rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+              tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+09)
+memory.limit(size=20000)
+```
+
+## Introduction
+
+As part of the larger Indian Savannah project, I have to prepare the study area from which I will extract points and MODIS tree cover to test the ABS theory. For now, I follow the methdology of Staver et al., 2014 in which the prepared the study area by considering 3 criteria- (1) exclude all areas with elevation greater than 1200m because at high elevation temperature plays a more important role in determining tree growth (2) exckude all areas that are settlements, bare/barren or flooded and (because there will be no tree cover to extract any information from) (3) exclude all areas that experience winter rainfall which is characteristic of Mediterranean shrublan biome where C4 and C3 grasses are less favoured. They define winter rainfall as any area where temp of driest month/temp of wettest month is less than 1.25.
+
+I need to revise these criteria when I speak to other co-authors. 
+
+
+###1. Exclude areas with elevation greater than 1200m
+
+```{r}
+elev<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Topography//Elevation90.tif")
+elev
+plot(elev)
+
+mcwd<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Climate_Processed//mcwd_noreorder.tif")
+
+elev_resample<-terra::resample(rast(elev), rast(mcwd), method= "bilinear")
+elev_resample
+
+plot(elev_resample)
+
+elev_resample<-terra::crop(elev_resample, rast(mcwd))
+elev_resample<- terra::mask(elev_resample, rast(mcwd))
+
+elev_resample[elev_resample>1200]<-NA ##all areas greater than 1200 m is made NA
+elev_resample[elev_resample<0]<-NA
+#writeRaster(elev_resample, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Topography//elev_resample_studyarea.tif",
+#            overwrite= TRUE)
+
+plot(elev_resample)
+
+elev_resample[elev_resample<1200]<-1
+
+#writeRaster(elev_resample, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Topography//elev_resample_binarystudyarea.tif", overwrite=TRUE)
+```
+
+###2. LULCs to be excluded
+
+Staver et al., 2014 used the Global Land Cover 2000 dataset to exclude certain LULCs. I used Roy et al., 2016 (Decadel changes in LULC) LULC 2005 (which is old) in which I excluded classes barren land, built up and urban areas, mangroves (where hydrological regimes determines vegetation), water bodies,aquaculture, salt pan,permanent wetlands, snow & ice.
+
+```{r}
+lulc2005<- raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Decadal_LULC_India_1336//data//LULC_2005.tif")
+lulc2005
+
+plot(lulc2005)
+
+m<-rbind(c(1,1), c(2, 1), c(3,NA),c(4,1), c(5, 1), c(6, NA),c(7, 1), c(8, 1), c(9,NA),c(10,1), c(11,NA), c(12,NA), c(13,NA),c(14,1),
+         c(15,1), c(16,1), c(17, NA), c(18, NA), c(19,1))
+
+Sys.time(); lulc_reclass<-terra::classify(rast(lulc2005), m); Sys.time() #2 min
+lulc_reclass
+
+plot(lulc_reclass)
+
+Sys.time(); lulc_reclass_resample<-terra::resample(lulc_reclass, rast(mcwd), method="near"); Sys.time() #2 min
+lulc_reclass_resample
+
+lulc_reclass_resample<-terra::crop(lulc_reclass_resample, rast(mcwd))
+lulc_reclass_resample<-terra::mask(lulc_reclass_resample, rast(mcwd))
+
+plot(lulc_reclass_resample)
+
+#writeRaster(lulc_reclass_resample, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Decadal_LULC_India_1336//lulc_reclass_studyarea_binary.tif")
+```
+
+###3. Winter rainfall
+Staver et al define winter rainfall as all areas having ratio temp of driest month to temp of wettest month less than 1.25. They use Worldclim dataset to extract the temp of driest month and temp of wettest month.
+
+Firstly, in current worldclim there is no driest month and wettest month. There are only estimates for driest quarter and wettest quarter. 
+
+And considering ratio mean temp of driest quarter to mean temp of wettest quarter, all of India is less than 1.25. According to Staver et al., all of India would be excluded. 
+
+I did this calculation in Google Earth Engine using Bioclim data. Need to clarify with larger group. The main question to ask is what climatic variables would support woody shrublands and then exclude these areas as where savannahs could not be supported. 
+
+However, considering above two criteria, I map the study area
+
+```{r}
+plot(elev_resample)
+plot(lulc_reclass_resample)
+
+
+studyarea1<-elev_resample+lulc_reclass_resample
+studyarea1
+plot(studyarea1)
+
+studyarea1[studyarea1>=1]<-1
+writeRaster(studyarea1, 
+            "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//StudyArea_ToPredictTo_Processed//studyarea_predictto1.tif")
+
+library(tmap)
+
+asia<- st_read("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper1//Data//Admin//Longitude_Graticules_and_World_Countries_Boundaries-shp//asian_countries_map2.shp") 
+india_boundary_roy<-st_read("C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper1\\Data\\Admin\\gadm36_IND_shp\\India_bound.shp")
+india_shp<-readOGR(dsn="C:/Users/Trisha_Gopalakrishna/OneDrive - Nexus365/Paper2/Data/Admin/gadm36_IND_shp", 
+                   layer="gadm36_IND_0")
+
+map_extent<- st_bbox(c(xmin=63.7, xmax=98.3,
+                       ymin=5.8, ymax=39), crs=4326) %>% st_as_sfc()
+
+
+studyarea_predictto_map<- tm_shape(asia, bbox = map_extent)+ tm_borders()+tm_shape(india_boundary_roy)+tm_borders()+tm_shape(india_shp)+ tm_fill()+
+  tm_shape(studyarea1) + tm_raster(palette = "YlOrRd",title="Study area to predict bistable states to",legend.show=FALSE)+ 
+  tm_compass(type = "arrow", position = c("left", "top"))+tm_scale_bar(position=c("right","bottom"))+
+  tm_layout(legend.show = TRUE)
+studyarea_predictto_map
+tmap_save(studyarea_predictto_map,
+          "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//StudyArea_ToPredictTo_Processed//studyarea.png", dpi = 700)
+
+```
+
+
