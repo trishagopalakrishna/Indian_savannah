@@ -1,0 +1,150 @@
+---
+title: "Soil_Prep"
+author: "Trisha Gopalakrishna"
+date: "19/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo= False, include=FALSE}
+library(RColorBrewer)
+library(lattice)
+library(tidyverse)
+library(raster)
+library(rgdal)
+library(ggplot2)
+library(sf)
+library(ncdf4)
+library(tmap)
+library(RColorBrewer)
+library(viridis)
+library(ncdf4)
+library(terra)
+library(gtools)
+
+terraOptions(memfrac=0.5, tempdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+             progress=10)
+rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+              tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+09)
+memory.limit(size=20000)
+```
+
+# Introduction 
+
+As part of the larger Indian savannah study, in this script I prepare soil related variables specifically sand fraction and soil water content or field capacity. 
+
+Savnnahs and grassalnds, due to their dense network of fine, relatively shorter root system tend to occupy shallow, alkaline, toxic, infertile, coarse-textured i.e. sand or fine textures i.e. shrink-swell clayey soils. 
+
+I use two main datasets extracted from GEE to process sand fraction- SoilGrids2 and Open Land Map. However, for water holding capcaity of soil, I use only Open Land Map data.
+
+##1. Soil water content- Field Capacity
+Soil water holding capacity is pretty complicated because of the effect of soil structure and compaction. 100% clay soils in the Amazon can actually have high drainage and low plant available water because the soils are so old that they have developed strong soil structure, so the water just flows down through macropores rather than getting absorbed into the clods. 
+
+The depth of the soil moisture holding capacity might be important. Annuals might rely mostly upon surface layers (annuals grow only during certain period of the year say summer, and die in winter), perennials (perinnials grow the entire year mostly or more easily) might have roots extending much further down, and trees can extend even further down. But dep
+
+Open Land Map seems to be an open platform for land related spatial data (https://opengeohub.org/about-landgis/)
+
+I extracted soil water capacity from GEE. It is described as soil water content (volumetric %) for 33 kPA and 1500kPa suctions at different depths (I chose at 30cm). Low values mean soil can hold less water (like the sandy soils in Rajasthan)
+
+```{r echo=FALSE}
+ol_swc<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Soil//OpenLandMap_FieldCap0_30.tif")
+ol_swc #0.00898
+
+plot(ol_swc)
+
+india_shp<-readOGR(dsn="C:/Users/Trisha_Gopalakrishna/OneDrive - Nexus365/Paper2/Data/Admin/gadm36_IND_shp", 
+                   layer="gadm36_IND_0")
+
+ol_swc_crop<-terra::crop(rast(ol_swc), vect(india_shp))
+ol_swc_mask<-terra::mask(ol_swc_crop, vect(india_shp))
+
+plot(ol_swc_mask)
+terra::writeRaster(ol_swc_mask, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Soil_Processed//ol_soilwatercapacity.tif")
+
+remove(ol_swc, ol_swc_crop)
+```
+
+##2. Sand fraction
+
+I extracted sand fraction from two sources- (1) Open Land Map, which is at 0-30cm and (2) ISRIC soil grids 
+
+I considered the Open land Map data for consistency in data sources, considering soil water capacity is from the same source. Also it is available at a 
+standard of 0-30cm depth, requiring not further processing. However, I do not know the source of this data. it might be the old ISRIC data (I remember seeing
+Hengl is a contributor to this database)
+
+I extracted sand fraction from OL from GEE. 
+
+```{r echo=FALSE}
+ol_sandfrac<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Soil//Sand//OpenLandMap_SandFrac0_30.tif")
+ol_sandfrac #0.00898
+
+plot(ol_sandfrac) #almost 80% sand fraction in Rajasthan
+
+ol_sandfrac_crop<-terra::crop(rast(ol_sandfrac), vect(india_shp))
+ol_sandfrac_mask<-terra::mask(ol_sandfrac_crop, vect(india_shp))
+
+plot(ol_sandfrac_mask)
+terra::writeRaster(ol_sandfrac_mask, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Soil_Processed//ol_sandfrac0_30.tif")
+
+remove(ol_sandfrac, ol_sandfrac_crop)
+```
+
+Extracting sand fraction from new ISRIC data is slightly more complicated because data is available at 0-5cm, 5-15cm and 15-30cm depths. To calculate to standard 0-30cm depth, I have to account for bulk density defined as bulk density of fine earth fraction.
+
+I found the weighted mean across all depths as per 
+https://gis.stackexchange.com/questions/390407/combining-new-soilgrids-of-finer-soil-depth-intervals-to-match-soil-depth-of-ol/390412#390412.
+
+I calculated the weighted sum as
+sandfrac0_5*bd0_5+ sandfrac5_15*bd5_15+ sandfrac15_30*bd15_30/ (bd0_5+bd5_15+bd15_30)
+
+```{r}
+sandfrac0_5<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Soil//Sand//Savannah_sand0_5mean.tif")
+sandfrac5_15<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Soil//Sand//Savannah_sand5_15mean.tif")
+sandfrac15_30<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Soil//Sand//Savannah_sand15_30mean.tif")
+
+bd0_5mean<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Soil//BD0_5mean.tif")
+bd5_15mean<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Soil//BD5_15mean.tif")
+bd15_30mean<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Soil//BD15_30mean.tif")
+
+##Mollweide projection 1000m pixel size. 
+
+sand_stack<-stack(sandfrac0_5, sandfrac15_30, sandfrac5_15)
+bd_stack<-stack (bd0_5mean, bd5_15mean, bd15_30mean)
+
+india_shp
+
+Sys.time();sand_stack_proj<-terra::project(rast(sand_stack),ol_sandfrac_mask, method="bilinear"); Sys.time()# 1 min
+sand_stack_proj
+Sys.time();bd_stack_proj<-terra::project(rast(bd_stack),ol_sandfrac_mask, method="bilinear"); Sys.time() #1min
+bd_stack_proj
+
+sand_proj_crop<-terra::crop(sand_stack_proj, vect(india_shp))
+sand_proj_mask<-terra::mask (sand_proj_crop, vect(india_shp))
+plot(sand_proj_mask)
+
+bd_proj_crop<-terra::crop(bd_stack_proj, vect(india_shp))
+bd_proj_mask<-terra::mask (bd_proj_crop, vect(india_shp))
+plot(bd_proj_mask)
+
+remove(sandfrac0_5, sandfrac5_15, sandfrac15_30, bd0_5mean, bd5_15mean, bd15_30mean, sand_stack, bd_stack, sand_stack_proj, bd_stack_proj, sand_proj_crop, bd_proj_crop)
+
+#Based on FAQ of ISRIC Soilhrids data -https://www.isric.org/explore/soilgrids/faq-soilgrids
+# I need to divide rasters by conversion factor to get variable in conventional units. I am assuming that this applies to mean data extracted from GEE too
+
+sand_proj_mask<-sand_proj_mask/10 #g/100g i.e. %
+bd_proj_mask<-bd_proj_mask/100 #kg/dm3
+
+weighted_sum0_30_numerator<- (sand_proj_mask[[1]]*bd_proj_mask[[1]])+(sand_proj_mask[[2]]*bd_proj_mask[[2]])+(sand_proj_mask[[3]]*bd_proj_mask[[3]]) 
+weighted_sum0_30_denominator<-sum(bd_proj_mask)
+
+x<-weighted_sum0_30_numerator/weighted_sum0_30_denominator
+x
+plot(x)
+
+terra::writeRaster(x, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Soil_Processed//isric2_sandfrac0_30.tif")
+```
+
+Both sand fraction datasets have comparable min and max, but the variation across India looks very different. And I do not know which one to choose (something to ask Sami)
