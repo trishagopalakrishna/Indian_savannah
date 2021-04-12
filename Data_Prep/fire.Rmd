@@ -1,0 +1,133 @@
+---
+title: "Fire_prep"
+author: "Trisha Gopalakrishna"
+date: "24/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(RColorBrewer)
+library(lattice)
+library(tidyverse)
+library(raster)
+library(rgdal)
+library(ggplot2)
+library(sf)
+library(ncdf4)
+library(tmap)
+library(RColorBrewer)
+library(viridis)
+library(ncdf4)
+library(terra)
+library(gtools)
+
+terraOptions(memfrac=0.5, tempdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+             progress=10)
+rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+              tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+09)
+memory.limit(size=20000)
+```
+
+# Introduction
+
+As part of the larger project about Indian savannahs, I process MODIS fire data here after comparison of MODIS and GFEDv4s (based on MODIS) in fire_modis.R and fire_gfedvs.R. I chose MODIS product because this is the standard and most commonly used dataset. I found no clarity in difference between the two datasets when I calculated area burned each year. Weirdly, the MODIS dataset showed more area burned than GFEDv4s, which I hypothesized to have more burned area since it picks up small fires.
+
+## Processing
+
+I extracted MODIS data of burned pixels for every month Nov 2000 to Dec 2020 as a multi band raster. I then extracted each month cropped and masked in fire_modis.R. I also made an animation of burned pixels in fire_modis.R
+
+```{r echo= FALSE, include= FALSE}
+input_path<-"C:\\Users\\Trisha_Gopalakrishna\\OneDrive - Nexus365\\Paper2\\Data\\Fire\\MODIS_BurnedArea\\MODIS_BinaryBurn\\MODIS_BurnArea_Monthly\\"
+burnedarealist <- list.files(path= input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+burnedarealist
+monthly_burnedarea <- rast(mixedsort(burnedarealist))
+monthly_burnedarea # burn/no burn 0.00898 resolution WGS
+```
+
+
+Based on Yadvinder's advice, I mask out all "Cropland" areas to exclude stubble burning (especially in NW). I use ROy et al., 2016 which is the decadal LULC change available on the ORNL website- https://daac.ornl.gov/VEGETATION/guides/Decadal_LULC_India.html. This dataset shows LULC for 1985, 1995 and 2005 with broad LULC categories at 100mx100m resolution.
+
+```{r}
+lulc2005<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Decadal_LULC_India_1336//data//LULC_2005.tif")
+lulc2005 #100mx100m with UTM 44 projection
+#plot(lulc2005)
+```
+Had a lo of problems projecting LULC raster to WGS 1984. I tried terra::project and raster::projectRaster. I also tried in QGIS qith no results. 
+So I decided to make a mask of only the Cropland class (pixel value=2) i.e. 1 and NA, reproject this to QGS 1984 and then use it as a mask. 
+
+```{r}
+m <- c(0, 2, NA,
+       2, 2, 2,
+       3, 255, NA)
+rclmat <- matrix(m, ncol=3, byrow=TRUE)
+Sys.time(); lulc2005_onlycrop <- terra::classify(rast(lulc2005), rclmat, include.lowest=TRUE); Sys.time() # 2 min
+
+lulc2005_onlycrop
+plot(lulc2005_onlycrop)
+
+lulc2005_onlycrop_wgs<-terra::project(lulc2005_onlycrop, monthly_burnedarea[[1]], method = "ngb")
+lulc2005_onlycrop_wgs
+plot(lulc2005_onlycrop_wgs)
+
+m <- rbind(c(2, NA), c(NA, 0))
+Sys.time();lulc2005_onlycrop_wg_inv<-terra::classify(lulc2005_onlycrop_wgs,m); Sys.time()
+
+lulc2005_onlycrop_wg_inv
+plot(lulc2005_onlycrop_wg_inv) # problem here is that every pixel outside of India is also 0 because I classified all NA to 0
+
+remove(rclmat,m)
+```
+I then applied the mask created to the stack of monthly burned rasters.
+```{r echo=FALSE, include=FALSE}
+Sys.time(); monthly_burnedarea_nocrop<-terra::mask(monthly_burnedarea, lulc2005_onlycrop_wg_inv); Sys.time() #4 min
+
+burnedarea_df<-tibble(Year=2000:2020)
+burnedarea_stack<- function (Year){
+  subset(monthly_burnedarea_nocrop, grep(Year, names(monthly_burnedarea_nocrop)))
+}
+burnedarea_df<-burnedarea_df %>% mutate(burnedarea_stack= map(Year,burnedarea_stack))
+
+annual_burnfreq_stack<- function (rs){
+  app(rs,sum)
+}
+Sys.time();burnedarea_df<-burnedarea_df %>% mutate(annualburnfreq=map(burnedarea_stack, annual_burnfreq_stack)); Sys.time() #6 min
+
+seperate_list<-burnedarea_df$annualburnfreq
+r<-stack(seperate_list[[1]])
+for (i in 2:length(seperate_list)){
+  x<-stack(seperate_list[[i]])
+  r<-addLayer(r,x)
+}
+Sys.time();total_burnfreq<- raster::stackApply(r,rep(1,21), sum); Sys.time() #2 min
+
+total_burnfreq
+plot(total_burnfreq)
+
+india_shp<-readOGR(dsn="C:/Users/Trisha_Gopalakrishna/OneDrive - Nexus365/Paper2/Data/Admin/gadm36_IND_shp", 
+                   layer="gadm36_IND_0")
+
+india_shp
+
+total_burnfreq_crop<-terra::crop(rast(total_burnfreq), vect(india_shp))
+total_burnfreq_mask<-terra::mask(total_burnfreq_crop, vect(india_shp))
+
+plot(total_burnfreq_mask)
+terra::writeRaster(total_burnfreq_mask, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Fire_Processed//modis_totalburnfreq2000_2020_nocrop.tif")
+
+m <- c(0, 1, NA,
+       1, 255, 1)
+rclmat <- matrix(m, ncol=3, byrow=TRUE)
+Sys.time(); total_burn_maskp <- terra::classify(total_burnfreq_mask, rclmat, include.lowest=TRUE); Sys.time() # 2 min
+total_burn_maskp
+plot(total_burn_maskp)
+
+terra::writeRaster(total_burn_maskp, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Fire_Processed//modis_totalburn2000_2020_nocrop.tif")
+
+
+```
+
+
