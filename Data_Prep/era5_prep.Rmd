@@ -1,0 +1,926 @@
+---
+title: "ERA-5 Land Climate Prep"
+author: "Trisha Gopalakrishna"
+date: "16/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+library(RColorBrewer)
+library(lattice)
+library(tidyverse)
+library(raster)
+library(rgdal)
+library(ggplot2)
+library(sf)
+library(ncdf4)
+library(tmap)
+library(RColorBrewer)
+library(viridis)
+library(ncdf4)
+library(terra)
+library(gtools)
+
+terraOptions(memfrac=0.5, tempdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+             progress=10)
+rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+              tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+09)
+memory.limit(size=20000)
+```
+
+
+# Introduction
+As part of the larger study on Indian savannahs, here I extract and process ERA-5 Land precipitation and other variables to produce different dimensions of rainfall variation and other cliamte related products, which might explain the extent of Indian savannahs. 
+
+Why ERA5 Land?
+
+What are the variables calculated
+
+## Processing variables
+###1. Mean Annual Precipitation
+
+I exported ERA5 Land monthly average images from GEE such that each image is for one year between 1981-2010 with the 12 months as separate bands. In the following code snippet, I crop and mask to India and export out GTiffs for each month for all years. I process both PPT and PET data below.
+
+DO NOT RUN BELOW CHUNK BECAUSE THE DATA PROCESSED IN THE CHUNK HAS BEEN SAVED 
+
+```{r echo=FALSE, include=FALSE}
+#1986, 1997,2001,2005,2006,2008 have two images because of how it was exported out of GEE. Separately will merge/mosiac
+
+ppt1986_pt1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_1986-0000000000-0000006912.tif")
+ppt1986_pt2<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_1986-0000000000-0000013824.tif")
+
+ppt1997_pt1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_1997-0000000000-0000006912.tif")
+ppt1997_pt2<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_1997-0000000000-0000013824.tif")
+
+ppt2001_pt1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_2001-0000000000-0000006912.tif")
+ppt2001_pt2<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_2001-0000000000-0000013824.tif")
+
+ppt2005_pt1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_2005-0000000000-0000006912.tif")
+ppt2005_pt2<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_2005-0000000000-0000013824.tif")
+
+ppt2006_pt1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_2006-0000000000-0000006912.tif")
+ppt2006_pt2<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_2006-0000000000-0000013824.tif")
+
+ppt2008_pt1<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_2008-0000000000-0000006912.tif")
+ppt2008_pt2<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//ERA5AP_2008-0000000000-0000013824.tif")
+
+output_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE"
+merge_rasters<-function (raster1, raster2){
+  r_merge<-terra::merge(rast(raster1), rast(raster2))
+  return (r_merge)
+};
+
+Sys.time();x<-merge_rasters(ppt1986_pt1,ppt1986_pt2); Sys.time() #7-8 min 
+writeRaster(x, filename=file.path(paste0(output_path),"/ERA5AP_1986-0000000000.tif"),format="GTiff")
+remove(x, ppt1986_pt1, ppt1986_pt2)
+
+Sys.time();x<-merge_rasters(ppt1997_pt1,ppt1997_pt2); Sys.time() #6 min
+writeRaster(x, filename=file.path(paste0(output_path),"/ERA5AP_1997-0000000000.tif"),format="GTiff")
+remove(x, ppt1997_pt1, ppt1997_pt2)
+
+Sys.time();x<-merge_rasters(ppt2001_pt1,ppt2001_pt2); Sys.time() #7-8 min 
+writeRaster(x, filename=file.path(paste0(output_path),"/ERA5AP_2001-0000000000.tif"),format="GTiff")
+remove(x, ppt2001_pt1, ppt2001_pt2)
+
+Sys.time();x<-merge_rasters(ppt2005_pt1,ppt2005_pt2); Sys.time() #10 min
+writeRaster(x, filename=file.path(paste0(output_path),"/ERA5AP_2005-0000000000.tif"),format="GTiff")
+remove(x, ppt2005_pt1, ppt2005_pt2)
+
+Sys.time();x<-merge_rasters(ppt2006_pt1,ppt2006_pt2); Sys.time() #10 min
+writeRaster(x, filename=file.path(paste0(output_path),"/ERA5AP_2006-0000000000.tif"),format="GTiff")
+remove(x, ppt2006_pt1, ppt2006_pt2)
+
+Sys.time();x<-merge_rasters(ppt2008_pt1,ppt2008_pt2); Sys.time() #7-8 min each
+writeRaster(x, filename=file.path(paste0(output_path),"/ERA5AP_2008-0000000000.tif"),format="GTiff")
+remove(x, ppt2008_pt1, ppt2008_pt2)
+
+remove(merge_rasters, output_path)
+
+ppt_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE"
+ppt_month_input_list <- list.files(path= ppt_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+
+
+india_shp<-readOGR(dsn="C:/Users/Trisha_Gopalakrishna/OneDrive - Nexus365/Paper2/Data/Admin/gadm36_IND_shp", 
+                   layer="gadm36_IND_0")
+output_dir<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//Cropped_Masked_EE_ppt"
+
+prep_ppt<-function (ppt_multiband_raster){
+  temp<-ppt_multiband_raster
+  temp_spat_crop<-terra::crop(temp, vect(india_shp))
+  temp_spat_mask<-terra::mask(temp_spat_crop, vect(india_shp))
+  return (temp_spat_mask)
+  print ("Write individual rasters out to disk")
+}
+prep_ppt_write<-function (ppt_multiband_raster, year){
+  months<-rep(c(1:12))
+  year<-year
+  for (i in 1:nlyr(ppt_multiband_raster)){
+      writeRaster(ppt_multiband_raster[[i]], filename=file.path(paste0(output_dir,"//", year,"_", months[i], ".tif")), bylayer=TRUE,format="GTiff") 
+      print ("Raster written")
+      } 
+  print ("Next year")
+}
+    
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[1]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1981"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[2]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1982"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[3]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1983"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[4]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1984"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[5]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1985"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[6]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1986"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[7]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1987"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[8]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1988"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[9]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1989"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[10]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1990"); Sys.time() #takes 1-2 min
+remove(x)
+
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[11]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1991"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[12]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1992"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[13]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1993"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[14]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1994"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[15]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1995"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[16]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1996"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[17]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1997"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[18]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1998"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[19]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "1999"); Sys.time() #takes 1-2 min
+remove(x)
+
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[20]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2000"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[21]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2001"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[22]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2002"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[23]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2003"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[24]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2004"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[25]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2005"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[26]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2006"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[27]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2007"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[28]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2008"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[29]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2009"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_ppt(rast(ppt_month_input_list[[30]])); Sys.time() #takes 2 min 
+Sys.time();prep_ppt_write(x, "2010"); Sys.time() #takes 1-2 min
+remove(x)
+
+remove(merge_rasters, prep_ppt, prep_ppt_write)
+remove(months, output_dir, output_path, ppt_input_path, ppt_month_input_list)
+
+```
+In the next code snippet, I calculate the total monthly ppt for each month by multiplying each raster by the number of days in the month the raster represents. This is because I have extracted from GEE, only monthly average values of variables from the ERA5 land product. I follow this by calculating the mean annual precipitation. 
+
+DO NOT RUN BELOW CHUNK BECAUSE THE DATA PROCESSED IN THE CHUNK HAS BEEN SAVED 
+```{r echo=FALSE, include= FALSE}
+ppt_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//Cropped_Masked_EE_ppt"
+ppt_month_input_list <- list.files(path= ppt_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+ppt_month_input_list
+
+ppt_reorder_month <- raster::stack(mixedsort(ppt_month_input_list))
+ppt_reorder_month
+
+remove(ppt_input_path, ppt_month_input_list)
+
+##this section is to calculate the number of days in each month os the year
+library(lubridate)
+date_range <- seq.Date(date("1981-01-01"), date("2010-12-01"), "month") # Create layer names as list of months from 1981 to present
+
+date_range_2 <- c(date_range, date("2011-01-01"))
+interval_days <- as.numeric(diff.Date(date_range_2))  
+
+Sys.time();totalmonthly_ppt<-terra::arith (rast(ppt_reorder_month), fun=function (x){ #this function is to multiply average monthly rainfall with # of days in month
+  x*interval_days
+} ); Sys.time() #7 min
+
+ppt_df<-tibble(Year=1981:2010)
+ppt_subset_stack<- function (Year){
+  subset(totalmonthly_ppt, grep(Year, names(ppt_reorder_month)))
+}
+ppt_df<-ppt_df %>% mutate(totalmonthlyppt_stack= map(Year,ppt_subset_stack))
+
+annual_ppt_stack<- function (rs){
+  app(rs,sum)
+}
+Sys.time();ppt_df<-ppt_df %>% mutate(annualppt=map(totalmonthlyppt_stack, annual_ppt_stack)); Sys.time() #12-13min
+
+seperate_list<-ppt_df$annualppt
+r<-stack(seperate_list[[1]])
+for (i in 2:length(seperate_list)){
+  x<-stack(seperate_list[[i]])
+  r<-addLayer(r,x)
+}
+
+Sys.time();mean_annual_ppt<- raster::stackApply(r,rep(1,30), mean); Sys.time()
+mean_annual_ppt
+#mean_annual_ppt<-mean_annual_ppt*1000 #convert to mm
+
+plot(mean_annual_ppt)
+writeRaster(mean_annual_ppt, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Climate_Processed//era5_mean_annual_ppt.tif")
+
+
+remove(mean_annual_ppt, ppt_df, ppt_reorder_month, r, seperate_list, totalmonthly_ppt,x,i, annual_ppt_stack, ppt_subset_stack)
+```
+###2. Mean annual potential evapotranspiration (pev)
+Potential evapotransporation is potential of the atmosphere to remove water from the surfaces (soil, canopy etc) by the processes of evaporation and transpiration. This is an important variable when thining about drought conditions. When pev exceeds the total ppt, it is an indicator of insufficeint water in the ecosystem. 
+I have to calculate pev (by month and mean annual) for any drought related variable like MCWD or aridity index (below).
+
+In the first code snippet, I extract the data into multple gtiffs, one for each month, as currently each raster is multiband because I extracted the rasters from GEE. This code snippet is similar to that of ppt above.
+
+
+DO NOT RUN BELOW CHUNK BECAUSE THE DATA PROCESSED IN THE CHUNK HAS BEEN SAVED 
+```{r echo= FALSE< include=FALSE}
+pev_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//EE_Unprocessed_monthly_values//"
+pev_month_input_list <- list.files(path= pev_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+
+prep_pev<-function (pev_multiband_raster){
+  temp<-pev_multiband_raster
+  temp_spat_crop<-terra::crop(temp, vect(india_shp))
+  temp_spat_mask<-terra::mask(temp_spat_crop, vect(india_shp))
+  return (temp_spat_mask)
+  print ("Write individual rasters out to disk")
+}
+output_dir<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//Cropped_Masked_EE_pev"
+prep_pev_write<-function (pev_multiband_raster, year){
+  months<-rep(c(1:12))
+  year<-year
+  for (i in 1:nlyr(pev_multiband_raster)){
+      writeRaster(pev_multiband_raster[[i]], filename=file.path(paste0(output_dir,"//", year,"_", months[i], ".tif")), bylayer=TRUE,format="GTiff") 
+      print ("Raster written")
+      } 
+  print ("Next year")
+}
+
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[1]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1981"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[2]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1982"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[3]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1983"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[4]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1984"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[5]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1985"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[6]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1986"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[7]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1987"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[8]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1988"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[9]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1989"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[10]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1990"); Sys.time() #takes 1-2 min
+remove(x)
+
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[11]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1991"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[12]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1992"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[13]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1993"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[14]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1994"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[15]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1995"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[16]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1996"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[17]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1997"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[18]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1998"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[19]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "1999"); Sys.time() #takes 1-2 min
+remove(x)
+
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[20]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2000"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[21]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2001"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[22]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2002"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[23]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2003"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[24]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2004"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[25]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2005"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[26]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2006"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[27]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2007"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[28]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2008"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[29]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2009"); Sys.time() #takes 1-2 min
+remove(x)
+Sys.time();x<-prep_pev(rast(pev_month_input_list[[30]])); Sys.time() #takes 2 min 
+Sys.time();prep_pev_write(x, "2010"); Sys.time() #takes 1-2 min
+remove(x)
+
+remove(pev_input_path, pev_month_input_list, prep_pev, prep_pev_write, output_dir)
+
+```
+
+In the next code snippet, I calculate the mean annual pev following similar methodology as mean annual ppt. However, in some months and years, min value of pev is negative. Positive values means condensation. ERA5 assumes that soil is well watered (hence able to provide the water that will evaporate) and there is no affect of atmosphere, which can be untrue. For example, atmosphere might be very humid thereby reducing pev. Or in dry areas, strong evaporation due to drier air can cause overestimated pev values i.e. very negative.  I chose to keep the negative values as is and go ahead with the calculations
+```{r echo=FALSE< include=FALSE}
+pev_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//Cropped_Masked_EE_pev"
+pev_month_input_list <- list.files(path= pev_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+pev_month_input_list
+
+pev_reorder_month <- raster::stack(mixedsort(pev_month_input_list))
+pev_reorder_month
+
+remove(pev_input_path, pev_month_input_list)
+
+Sys.time();totalmonthly_pev<-terra::arith (rast(pev_reorder_month), fun=function (x){ #this function is to multiply average monthly rainfall with # of days in month
+  x*interval_days
+} ); Sys.time() #7 min
+
+pev_df<-tibble(Year=1981:2010)
+pev_subset_stack<- function (Year){
+  subset(totalmonthly_pev, grep(Year, names(pev_reorder_month)))
+}
+pev_df<-pev_df %>% mutate(totalmonthlypev_stack= map(Year,pev_subset_stack))
+
+annual_pev_stack<- function (rs){
+  app(rs,sum)
+}
+Sys.time();pev_df<-pev_df %>% mutate(annualpev=map(totalmonthlypev_stack, annual_pev_stack)); Sys.time() #12-13min
+
+seperate_list<-pev_df$annualpev
+r<-stack(seperate_list[[1]])
+for (i in 2:length(seperate_list)){
+  x<-stack(seperate_list[[i]])
+  r<-addLayer(r,x)
+}
+
+Sys.time();mean_annual_pev<- raster::stackApply(r,rep(1,30), mean); Sys.time() #2-3 min
+mean_annual_pev
+#mean_annual_ppt<-mean_annual_ppt*1000 #convert to mm
+
+plot(mean_annual_pev)
+writeRaster(mean_annual_pev, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Climate_Processed//era5_mean_annual_pev.tif")
+
+remove(mean_annual_pev, pev_df, pev_reorder_month, r, seperate_list, totalmonthly_pev,x,i, annual_pev_stack, pev_subset_stack)
+```
+### 3. P:PET (mean annual values)- aridity index
+This index is an indicator of the dryness of the climate. In the following code snippet, i calculate this index based on formula from
+World Atlas of Desertification- https://wad.jrc.ec.europa.eu/patternsaridity
+
+```{r}
+############################# SKIP TO LINES 493 IN THIS CHUNK
+ppt_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//Cropped_Masked_EE_ppt"
+ppt_month_input_list <- list.files(path= ppt_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+ppt_month_input_list
+
+ppt_reorder_month <- raster::stack(mixedsort(ppt_month_input_list))
+ppt_reorder_month
+
+pev_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//Cropped_Masked_EE_pev"
+pev_month_input_list <- list.files(path= pev_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+pev_month_input_list
+
+pev_reorder_month <- raster::stack(mixedsort(pev_month_input_list))
+pev_reorder_month
+
+remove(ppt_input_path, ppt_month_input_list, pev_month_input_list, pev_input_path)
+
+library(lubridate)
+date_range <- seq.Date(date("1981-01-01"), date("2010-12-01"), "month") # Create layer names as list of months from 1981 to present
+
+date_range_2 <- c(date_range, date("2011-01-01"))
+interval_days <- as.numeric(diff.Date(date_range_2))  
+
+Sys.time();totalmonthly_ppt<-terra::arith (rast(ppt_reorder_month), fun=function (x){ #this function is to multiply average monthly rainfall with # of days in month
+  x*interval_days
+} ); Sys.time() #7 min
+
+output_dir<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//TotalMonthly_Ppt"
+Sys.time()
+for (i in 1:nlyr(totalmonthly_ppt)){
+ terra::writeRaster(totalmonthly_ppt[[i]], filename=file.path(paste0(output_dir,"//", names(totalmonthly_ppt[[i]]),".tif")))
+}; Sys.time() #takes 2 hours
+
+Sys.time();totalmonthly_pev<-terra::arith (rast(pev_reorder_month), fun=function (x){ #this function is to multiply average monthly rainfall with # of days in month
+  x*interval_days
+} ); Sys.time() # 10-12 min
+
+output_dir<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//TotalMonthly_Pev"
+Sys.time()
+for (i in 1:nlyr(totalmonthly_pev)){
+ terra::writeRaster(totalmonthly_pev[[i]], filename=file.path(paste0(output_dir,"//", names(totalmonthly_pev[[i]]),".tif")))
+}; Sys.time() # 2hours
+
+####################################################### RUN FROM BELOW BECUASE ABOVE LINES HAVE BEEN PROCESSED AND SAVED
+
+ppt_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//TotalMonthly_Ppt"
+ppt_month_input_list <- list.files(path= ppt_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+ppt_month_input_list
+
+totalmonthly_ppt <- terra::rast(mixedsort(ppt_month_input_list))
+totalmonthly_ppt
+
+pev_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//TotalMonthly_Pev"
+pev_month_input_list <- list.files(path= pev_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+pev_month_input_list
+
+totalmonthly_pev <- terra::rast(mixedsort(pev_month_input_list))
+totalmonthly_pev
+
+remove(ppt_month_input_list, pev_month_input_list, ppt_input_path, pev_input_path)
+#Based on formula in World of Desertification database.
+aridity_df<-tibble(Year=1981:2010)
+
+ppt_subset_stack<- function (Year){
+  subset(totalmonthly_ppt, grep(Year, names(totalmonthly_ppt)))
+}
+aridity_df<-aridity_df %>% mutate(totalmonthlyppt_stack= map(Year,ppt_subset_stack)); aridity_df
+
+pev_subset_stack<- function (Year){
+  subset(totalmonthly_pev, grep(Year, names(totalmonthly_pev)))
+}
+aridity_df<-aridity_df %>% mutate(totalmonthlypev_stack= map(Year,pev_subset_stack)); aridity_df
+
+annual_ppt_stack<- function (rs){
+  app(rs,sum)
+}
+Sys.time();aridity_df<-aridity_df %>% mutate(annualppt=map(totalmonthlyppt_stack, annual_ppt_stack)); Sys.time() #10min
+
+annual_pev_stack<- function (rs){
+  app(rs,sum)
+}
+Sys.time();aridity_df<-aridity_df %>% mutate(annualpev=map(totalmonthlypev_stack, annual_pev_stack)); Sys.time() #11 min
+
+Sys.time();aridity_df<-aridity_df %>% mutate(annualaridity= purrr::map2(annualppt, annualpev,~.x/.y)); Sys.time() #1 min
+
+seperate_list<-aridity_df$annualaridity
+r<-stack(seperate_list[[1]])
+for (i in 2:length(seperate_list)){
+  x<-stack(seperate_list[[i]])
+  r<-addLayer(r,x)
+}
+
+Sys.time();mean_annual_aridity<- raster::stackApply(r,rep(1,30), mean); Sys.time() #1 min
+mean_annual_aridity
+summary(mean_annual_aridity)
+
+plot(mean_annual_aridity)
+writeRaster(mean_annual_aridity, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Climate_Processed//era_mean_annual_aridity.tif")
+
+remove(x, i, annual_pev_stack, annual_ppt_stack, pev_subset_stack, ppt_subset_stack, seperate_list,r)
+remove(pev_reorder_month, ppt_reorder_month, aridity_df)
+remove(date_range, date_range_2)
+```
+
+### 4. Vapor Pressure Deficit
+I calculated vapor pressure deficit (vpd) in GEE. Stomato directly responds to vpd.
+The maximum amount of water vapor that air can hold at a certain temperature is called “saturation vapor pressure” or SVP.As the air gets hotter, the amount of water that the air can hold (its SVP) increases. As air cools down, the SVP decreases, meaning that the air can’t hold as much water vapor.
+
+The current actual amount of water vapor in the air is called the “actual vapor pressure” or AVP. If AVP does not increase, but the temperature increases then the difference between SVP and AVP increases. This difference is VPD. As VPD increases, stomata becomes smaller thereby decreasing in CO2 intake and the transpiration inceases because of the ;arge difference between the vapor pressures between the leaf and the air. And this balance effects distribution of C4 plants because C4 plants can fix more carbon per unit water absorbed. Hence when VPD increases due to rise in temperatures, C4 plants like savannah grasses, do better because they can fix more carbon though water availability has decreased.
+
+I calculated VPD in kPa on GEE (https://code.earthengine.google.com/?scriptPath=users%2Ftrishagopalakrishna%2Fdefault%3AClimate%2FVPD) using the eqn VPD= SVP-AVP where
+SVP= 6.11 * 10^(7.5T/237.3+T) ; T here is air temperature 
+AVP= 6.11 * 10^(7.5*dewtemperature/237.3+dewtemperature)
+
+Temperature variables are available by ERA5 Land monthly. 
+
+I calculated above for each month of each year, found the average annual value and then took the mean across all years to get mean annual VPD.
+```{r echo=FALSE, include=FALSE}
+era5_vpd<-raster("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//ERA5_VPD_1981_2010.tif")
+era5_vpd
+```
+This mean annual VPD is 0.0089 degrees spatial resolution WGS 1984 CRS, which is pretty fine. 
+``` {r echo=FALSE}
+plot(era5_vpd)
+era5_vpd<-rast(era5_vpd)
+```
+
+I cropped and masked to India keeping the spatial resolution. 
+
+```{r echo=FALSE, include=TRUE }
+india_shp<-readOGR(dsn="C:/Users/Trisha_Gopalakrishna/OneDrive - Nexus365/Paper2/Data/Admin/gadm36_IND_shp", 
+                   layer="gadm36_IND_0")
+india_shp
+
+Sys.time();era5_vpd_crop<-terra::crop(era5_vpd, india_shp)
+era5_vpd_mask<-terra::mask(era5_vpd_crop, vect(india_shp)); Sys.time() #took about a minute
+```
+```{r echo=FALSE}
+plot(era5_vpd_mask)
+writeRaster(era5_vpd_mask, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Climate_Processed//era5_mean_annual_vpd.tif")
+
+remove(era5_vpd, era5_vpd_crop)
+```
+
+###5. Dry season length
+This is a good indicator of drought conditions i.e. it is a seasonality index. 
+
+```{r}
+totalmonthly_ppt
+totalmonthly_pev
+
+dryseasonlength_df<-tibble(Year=1981:2010)
+ppt_subset_stack<- function (Year){
+  subset(totalmonthly_ppt, grep(Year, names(totalmonthly_ppt)))
+}
+dryseasonlength_df<-dryseasonlength_df %>% mutate(totalmonthlyppt_stack= map(Year,ppt_subset_stack))
+
+pev_subset_stack<- function (Year){
+  subset(totalmonthly_pev, grep(Year, names(totalmonthly_pev)))
+}
+dryseasonlength_df<-dryseasonlength_df %>% mutate(totalmonthlypev_stack= map(Year,pev_subset_stack))
+
+ppt_less_pet_stack<-function (ppt_rs, pev_rs){
+  ppt_rs<(pev_rs*-1)
+}
+dryseasonlength_df<-dryseasonlength_df %>% mutate(ppt_less_pev = purrr::map2(totalmonthlyppt_stack,totalmonthlypev_stack, ppt_less_pet_stack))#took a while
+
+dryseasonmonths<-function(binary_dry_rs){
+  app(binary_dry_rs, sum)
+}
+Sys.time();dryseasonlength_df<-dryseasonlength_df %>% mutate(dryseason_months= map(ppt_less_pev,dryseasonmonths)); Sys.time()# 5min
+
+seperate_list<-dryseasonlength_df$dryseason_months
+r<-stack(seperate_list[[1]])
+for (i in 2:length(seperate_list)){
+  x<-stack(seperate_list[[i]])
+  r<-addLayer(r,x)
+}
+
+Sys.time();mean_annual_dryseasonlength<- raster::stackApply(r,rep(1,30), mean); Sys.time() #1 min
+mean_annual_dryseasonlength
+summary(mean_annual_dryseasonlength)
+plot(mean_annual_dryseasonlength)
+
+writeRaster(mean_annual_dryseasonlength, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Climate_Processed//era_mean_annual_dryseasonlength.tif")
+
+remove(i,x,r, dryseasonlength_df, seperate_list,dryseasonmonths )
+```
+###6. Dry season rainfall
+
+```{r}
+totalmonthlyppt_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//TotalMonthly_Ppt"
+ppt_month_input_list <- list.files(path= totalmonthlyppt_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+ppt_month_input_list
+
+ppt_reorder_month <- raster::stack(mixedsort(ppt_month_input_list))
+ppt_reorder_month<-terra::rast(ppt_reorder_month)
+
+totalmonthlypev_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//TotalMonthly_Pev"
+pev_month_input_list <- list.files(path= totalmonthlypev_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+pev_month_input_list
+
+pev_reorder_month <- raster::stack(mixedsort(pev_month_input_list))
+pev_reorder_month <- terra:: rast(pev_reorder_month)
+
+remove(totalmonthlyppt_input_path, totalmonthlypev_input_path,ppt_month_input_list, pev_month_input_list)
+
+
+dryseasonrainfall_df<-tibble(Year=1981:2010)
+ppt_subset_stack<- function (Year){
+  subset(ppt_reorder_month, grep(Year, names(ppt_reorder_month)))
+}
+dryseasonrainfall_df<-dryseasonrainfall_df %>% mutate(totalmonthlyppt_stack= map(Year,ppt_subset_stack))
+
+pev_subset_stack<- function (Year){
+  subset(pev_reorder_month, grep(Year, names(pev_reorder_month)))
+}
+dryseasonrainfall_df<-dryseasonrainfall_df %>% mutate(totalmonthlypev_stack= map(Year,pev_subset_stack))
+
+
+ppt_less_pev_stack<-function (ppt_rs, pev_rs){
+  ppt_rs<(pev_rs*-1)
+}
+Sys.time();dryseasonrainfall_df<-dryseasonrainfall_df %>% mutate(ppt_less_pev = purrr::map2(totalmonthlyppt_stack,totalmonthlypev_stack, ppt_less_pev_stack)); Sys.time() #took 
+
+out.dir<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch//logical_ppt_less_pev"
+years<-1981:2010
+for( i in 1:30){
+  terra::writeRaster(dryseasonrainfall_df$ppt_less_pev[[i]], 
+                     filename = file.path(paste0(out.dir,"//", years[[i]], ".tif")))
+}
+
+logical_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch//logical_ppt_less_pev"
+logical_month_input_list <- list.files(path= logical_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+logical_month_input_list
+
+logical_month <- terra::rast(mixedsort(logical_month_input_list))
+
+logical_subset_stack<- function (Year){
+  subset(logical_month , grep(Year, names(logical_month )))
+}
+dryseasonrainfall_df<-dryseasonrainfall_df %>% mutate(logical_stack= map(Year,logical_subset_stack))
+
+ppt_less_pev_rainfall_stack<- function (logical_rs, ppt_rs){
+  terra::cover(logical_rs, ppt_rs, values=1)
+}
+Sys.time();dryseasonrainfall_df<-dryseasonrainfall_df %>%
+  mutate(dryseasonrainfall = purrr::map2(logical_stack,totalmonthlyppt_stack,ppt_less_pev_rainfall_stack));Sys.time() # 7-8 min
+
+annual_dryseasonrainfall_stack<- function (rs){
+  app(rs,sum)
+}
+Sys.time();dryseasonrainfall_df<-dryseasonrainfall_df %>% mutate(annualdryseasonrainfall=map(dryseasonrainfall, annual_dryseasonrainfall_stack)); Sys.time() #6 min
+
+seperate_list<-dryseasonrainfall_df$annualdryseasonrainfall
+r<-stack(seperate_list[[1]])
+for (i in 2:length(seperate_list)){
+  x<-stack(seperate_list[[i]])
+  r<-addLayer(r,x)
+}
+
+Sys.time();mean_annual_dryseasonrainfall<- raster::stackApply(r,rep(1,30), mean); Sys.time() #2 min
+mean_annual_dryseasonrainfall
+summary(mean_annual_dryseasonrainfall)
+
+plot(mean_annual_dryseasonrainfall)
+writeRaster(mean_annual_dryseasonrainfall,"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Climate_Processed//era5_mean_annual_dryseasonrainfall.tif")
+
+
+```
+
+###7. MCWD (not reordered)
+
+```{r}
+totalmonthlyppt_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//TotalMonthly_Ppt"
+ppt_month_input_list <- list.files(path= totalmonthlyppt_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+ppt_month_input_list
+
+ppt_reorder_month <- raster::stack(mixedsort(ppt_month_input_list))
+ppt_reorder_month<-terra::rast(ppt_reorder_month)
+ppt_reorder_month
+
+months<-rep(c("Jan", "Feb", "Mar", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"),30) 
+years<-rep(1981:2010, each=12)
+
+names(ppt_reorder_month)<- paste0(months,years)
+
+totalmonthlypev_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//TotalMonthly_Pev"
+pev_month_input_list <- list.files(path= totalmonthlypev_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+pev_month_input_list
+
+pev_reorder_month <- raster::stack(mixedsort(pev_month_input_list))
+pev_reorder_month <- terra:: rast(pev_reorder_month)
+
+names(pev_reorder_month)<- paste0(months,years)
+
+remove(totalmonthlyppt_input_path, totalmonthlypev_input_path,ppt_month_input_list, pev_month_input_list)
+
+month_list<- c("Jan", "Feb", "Mar", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec")
+mcwd_df_bymonth<-tibble( Month=month_list) 
+ppt_subset_stack<- function (Month){
+  subset(ppt_reorder_month, grep(Month, names(ppt_reorder_month)))
+}
+mcwd_df_bymonth<-mcwd_df_bymonth %>% mutate(totalmonthlyppt_stack= map(Month,ppt_subset_stack))
+
+pev_subset_stack<- function (Year){
+  subset(pev_reorder_month, grep(Year, names(pev_reorder_month)))
+}
+mcwd_df_bymonth<-mcwd_df_bymonth %>% mutate(totalmonthlypev_stack= map(Month,pev_subset_stack))
+
+wd_stack<-function (ppt, pev){
+  ppt-(pev*-1)
+}
+Sys.time();mcwd_df_bymonth<-mcwd_df_bymonth %>% mutate(wd=purrr::map2(totalmonthlyppt_stack, totalmonthlypev_stack, wd_stack)); Sys.time() #6 min
+
+seperate_list<-mcwd_df_bymonth$wd
+r<-stack(seperate_list[[1]])
+for (i in 2:length(seperate_list)){
+  x<-stack(seperate_list[[i]])
+  r<-addLayer(r,x)
+}
+
+mcwd.f = function(y){
+  result= as.numeric(y)
+  for(i in 1:length(result)){
+    wdn = result[i]
+    wdn1 = result[i-1]
+    
+    if(i==1){
+      if(!is.na(wdn) & wdn>0){ result[i]=0}
+      else{result[i]=wdn}
+    }
+    
+    if(i!=1){
+      cwd = wdn1+wdn
+      if(!is.na(cwd) & cwd < 0){ result[i]=cwd}
+      else{result[i]=0}
+    }
+  }
+  return(result)  
+}
+
+Sys.time();cwd<-terra::arith(rast(r), mcwd.f); Sys.time() #2 hour
+
+# Determining the Annual MCDW
+ano = 1981 # Start Year of the Temporal Series
+for (i in seq(1,360,12)) { # Replace 132 by the Total Months of the Time Series
+  cwd.a = cwd[[i:(i+11)]]
+  mcwd.a = min(cwd.a)
+  
+  # Saving the Annual MCWD
+  print(paste0(ano, " - ", Sys.time()))
+  terra::writeRaster(mcwd.a, paste0("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//MCWD_rasters//MCWD_", ano, ".tif"))
+  ano = ano+1
+} #takes about 20 min to write out files
+
+cwd_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//MCWD_rasters"
+cwd_input_list <- list.files(path= cwd_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+cwd_input_list
+
+cwd_reorder_month<-terra::rast(mixedsort(cwd_input_list))
+cwd_reorder_month
+
+Sys.time(); mean_cwd<-terra::app(cwd_reorder_month, mean); Sys.time()
+mean_cwd
+
+india_shp<-readOGR(dsn="C:/Users/Trisha_Gopalakrishna/OneDrive - Nexus365/Paper2/Data/Admin/gadm36_IND_shp", 
+                   layer="gadm36_IND_0")
+
+mean_cwd_crop<-terra::crop(mean_cwd, vect(india_shp))
+Sys.time();mean_cwd_mask<-terra::mask(mean_cwd_crop, vect(india_shp)); Sys.time()
+
+mean_cwd_mask
+plot(mean_cwd_mask)
+
+terra::writeRaster(mean_cwd_mask, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Climate_Processed//mcwd_noreorder.tif")
+
+
+remove(cwd, cwd_reorder_month, cwd.a, mcwd.a, mean_cwd, mean_cwd_crop, pev_reorder_month, ppt_reorder_month,r, seperate_list,x, ano, cwd_input_list, cwd_input_path, i, month_list, months, years)
+
+```
+
+
+####8. MCWD reorderd- incomplete; DO NOT KNOW WHAT IS WRONG AND HOW TO FIX. TAKING FOREVER
+```{r}
+
+totalmonthlyppt_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PPT_rasters//EE//TotalMonthly_Ppt"
+ppt_month_input_list <- list.files(path= totalmonthlyppt_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+ppt_month_input_list
+
+ppt_reorder_month <- raster::stack(mixedsort(ppt_month_input_list))
+ppt_reorder_month<-terra::rast(ppt_reorder_month)
+ppt_reorder_month
+
+months<-rep(c("Jan", "Feb", "Mar", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"),30) 
+years<-rep(1981:2010, each=12)
+
+names(ppt_reorder_month)<- paste0(months,years)
+
+totalmonthlypev_input_path<-"C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Data//Climate//ERA5//PET_rasters//TotalMonthly_Pev"
+pev_month_input_list <- list.files(path= totalmonthlypev_input_path , pattern = '.tif$', full.names = T) #change '_month #.tif$'
+pev_month_input_list
+
+pev_reorder_month <- raster::stack(mixedsort(pev_month_input_list))
+pev_reorder_month <- terra:: rast(pev_reorder_month)
+
+names(pev_reorder_month)<- paste0(months,years)
+
+remove(totalmonthlyppt_input_path, totalmonthlypev_input_path,ppt_month_input_list, pev_month_input_list)
+
+reorder <- function(r_s) {
+  if(any(is.nan(r_s)) | any(is.na(r_s[1]))) {
+    return(rep(NA, length.out = (length(r_s) - 12)))
+  } else {
+    months <- 1:12
+
+    # New function to calculate mean for each month across years
+    monthly_mean <- function(month_number, vector) {
+      month_indices <- (1:length(vector) - 1) %% 12 + 1 == month_number
+      month_mean <- mean(vector[month_indices])
+      month_mean
+    }
+    
+    # Apply function for each month
+    monthly_mean_ppt <- sapply(months, monthly_mean, vector = r_s)
+
+    x <- which.max(monthly_mean_ppt)
+
+    r_s_reorder <- r_s[x:(length(r_s) - (13 - x))]
+    return(r_s_reorder)
+  }
+}
+
+Sys.time();reordered_ppt<-raster::calc(stack(ppt_reorder_month), fun=reorder); Sys.time()
+
+
+
+################## The below code chuck was published by Schwartz et al., 2020. I have tried to modify it in the above lines
+#################
+#################
+
+MCWD_timeSeries <- function(rainSeries, PET = 100, nYears){
+  #calculated the maximum climatological water deficit, the most negative value of the cumulative difference between precipitation and PET . 
+  #either use approximate value of PET = 100 or provide 12 month series.
+  #Warning: this version of MCWD is for calculating MCWD across multiple years, when you have a time series of monthly rainfall
+  #It will return a vector with 1 MCWD value for each hydrological year, with the hydrological year defined as starting in the wettest month. 
+  #So, unless the wettest month in a dataset is January, the function will return one less value than the number of years
+  moMeans <- rowMeans(matrix(rainSeries, nrow = 12, byrow = F))#calculate mean monthly rainfall and then identify the wettest month
+  wetMo <- which(moMeans == max(moMeans))#get the wettest month
+  rainSeriesReorder <- if(wetMo > 1) rainSeries[c(wetMo:(length(rainSeries) - (13-wetMo)))] else rainSeries #start with the wettest month
+  PET <- if(length(PET) == 1) rep(PET, length(rainSeries)) else PET #if only one value for PET, turn it into a vector w 12 values.
+  PET <- if(wetMo > 1) PET[c(wetMo:(length(rainSeries) - (13-wetMo)))] else PET
+  nHydroYear <- length(rainSeriesReorder)/12 #how many hydro years?
+  MCWDvals <- NULL #vector to hold the values for MCWD
+  for(i in 1:nHydroYear){
+    waterDef <- NULL #empty vector to hold the monthly water deficit values
+    waterDef[1] <- 0
+  for(j in 2:12){
+    j_adj <- 12*(i-1) + j
+    if((waterDef[j-1] - PET[j] + rainSeriesReorder[j_adj]) < 0) {  #if there is a water deficit
+      waterDef[j] <- waterDef[j-1] - PET[j] + rainSeriesReorder[j_adj] #accumulate water deficit - subtract PET and add rain to previous month's deficit
+    }
+    else{
+      waterDef[j] <- 0
+    }
+  }
+    MCWDvals[i] <- min(waterDef)
+  }
+  
+  return(MCWDvals)
+}
+
+
+
+```
+
