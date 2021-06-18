@@ -1,0 +1,593 @@
+---
+title: "savannah_analyses"
+author: "Trisha Gopalakrishna"
+date: "10/05/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(RColorBrewer)
+library(lattice)
+library(tidyverse)
+library(raster)
+library(rgdal)
+library(ggplot2)
+library(sf)
+
+library(tmap)
+library(RColorBrewer)
+library(viridis)
+
+library(terra)
+library(gtools)
+
+terraOptions(memfrac=0.5, tempdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+             progress=10)
+rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+              tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+09)
+memory.limit(size=20000)
+```
+## Introduction
+
+In this script, I start the GAM modeling to predict bistable states of savannahs-forest at pan-India scale. GAMs are middle ground between linear models (like linear regression) and black box complex machine learning algorithms. GAMs can fit complex, nonlinear relationships. 
+
+###1. Data input and additional prep
+
+```{r}
+data_df<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Sampled_Data//cleanedx100mm_data.csv")
+head(data_df)
+summary(data_df)
+
+data_df_treecover<- data_df %>% dplyr::select(Aridity_studyarea, BinaryBurn, BuffaloDM, CattleDM, DrySeasonLength, DrySeasonRainfall, GoatDM,
+                                       HorseDM, MAP, MCWD, Sandfrac, SheepDM, VPD, WaterHoldingCap, Percent_Tree_Cover_mean,x,y)
+
+head(data_df_treecover)
+names(data_df_treecover)[1]<-"Aridity"
+
+```
+Following advice from Gavin Simpson (https://fromthebottomoftheheap.net/2017/12/14/difference-splines-ii/) about ordered- factor smooths. It is approporiate because I have a reference level i.e. where there is no fire and anything different i.e. where there is fire
+
+```{r}
+data_df_treecover <- data_df_treecover %>% mutate(oBurn=case_when(BinaryBurn==0~'noburn', TRUE~'burn')) 
+data_df_treecover<- data_df_treecover %>% mutate(oBurn2= ordered(oBurn, levels=c('noburn', 'burn')))
+
+head(data_df_treecover)
+names(data_df_treecover)
+str(data_df_treecover) #Binary burn is now an ordered factor
+
+data_df_treecover<- data_df_treecover %>% dplyr::select(-oBurn)
+
+remove(data_df)
+
+#train <- data_df_treecover %>% sample_frac(0.75) #randomly sample 75% of the data to train the model 
+#test <- anti_join(data_df_treecover,train) #remaining 25% is the test data
+
+```
+###3. Variable selection
+GAMs are fitted best with 3-7 variables (from Sami's email 05/06/2021). So here, I select variables for the modeling process. 
+Of the two soil variables, I choose to keep sand fraction. 
+
+Of the 5 dry matter intake herbivory variables, I do a PCA analyses to reduce the dimensionality and use the PCA loadings as variables in the GAM modeling. 
+
+Of the climate variables, based on LDA analyses, I have decided to use MCWD, VPD and MAP for now. This is up for discussion in next meeting with collaborators. 
+
+First, PCA to reduce the dimensionality of herbivory variables. In the chunk below, I reduce the herbivory data to 2 PCAs, which explain 53% of the variance in the data. QUESTION- IS THIS SUFFICIENT OR SHOULD I INCLUDE 3 PCAs ACCOUNTING FOR 73%.
+
+QUESTION- SINCE I LOG TRANSFORMED THE HERBIVORY DATA WHICH I THEN INCLUDED IN THE PCA, SHOULD THE PCA LOADINGS BE BACK TRANSFORMED?
+
+Looking at biplot, Buffalo DM and Sheep DM are positively correlated. While cattle and horse DM are negatively correlated to Buffalo and Sheep DM. 
+
+http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/118-principal-component-analysis-in-r-prcomp-vs-princomp/
+See link for info to include in Methods
+```{r}
+data_df_herbivory<- data_df_treecover %>% dplyr:: select(BinaryBurn, BuffaloDM, CattleDM, GoatDM, HorseDM, SheepDM)
+head(data_df_herbivory)
+
+data_df_herbivory$BinaryBurn<- as.factor(data_df_herbivory$BinaryBurn)
+data_df_herbivory_pivot<- data_df_herbivory %>% pivot_longer(2:6)
+head(data_df_herbivory_pivot)
+
+ggplot(data_df_herbivory_pivot, aes(x=value))+
+  geom_histogram()+
+  facet_wrap(~ name, scales= "free_x") 
+
+data_df_herbivory_pivot_transform<- data_df_herbivory_pivot %>% mutate(value_log= log1p(value))
+ggplot(data_df_herbivory_pivot_transform, aes(x=value_log))+
+  geom_histogram()+
+  facet_wrap(~ name, scales= "free_x") # horse and sheep DM still not normal
+
+data_df_herbivory_transform<- log1p(data_df_herbivory[,2:6]) 
+burn_info<- data_df_herbivory[,1]
+
+herbivory.pca<- data_df_herbivory_transform %>% 
+  stats::prcomp(scale.= TRUE, center= TRUE)
+
+herbivory.pca %>% summary()
+herbivory.pca$rotation
+plot(herbivory.pca, type = "l") #2 PCA even though 2 PCa only explain about 55% of variance
+
+library(ggbiplot)
+herbivory.pca %>%
+  ggbiplot::ggbiplot(alpha=0.25, groups=data_df_herbivory$BinaryBurn)
+
+herbivory.pca %>%
+  ggbiplot::ggscreeplot()
+
+pca_backtransformed<-as.data.frame(expm1(herbivory.pca$x[,1:2])) #back transforming log1p ####CHECK WITH SAMI#####
+
+data_df_treecover<- bind_cols(data_df_treecover, pca_backtransformed)
+
+remove(data_df_herbivory, data_df_herbivory_pivot, data_df_herbivory_pivot_transform, data_df_herbivory_transform)
+```
+
+Second, LDA on climate variables to extract the most important climate variables. I chose this method because I am hesitatn about doing an ordination as the interpretation will be difficult. I would rather keep 1-2 climate variables to be included in the GAMs. QUESTION- IS THIS RIGHT LINES OF THINKING? 
+
+I first center and scale all climate variables to standardize it across the entire dataset i.e. I have no training and testing. The main purpose in this LDA is to see which climate variables are most important in separating out burned and unburned points. 
+
+From the LDA plot, it does not seem like the climate variables best separate the burned and unburned points. QUESTION- IS THIS CORRECT INTERPRETATION BECAUSE I THINK THIS IS CORRECT? I think this is correct because this is what bistability is i.e. there is overlapping climate space of trees and savannahs and disturbance (fire, grazing etc) are the main determinants. 
+
+Looking at the LDA coefficients, seems like aridity index, mean annual precip and VPD have the highest absolute values. QUESTION- SHOULD I BE USING THESE VARIBALEs IN THE FINAL ANALYSES THEN? IS IT DEFENDABLE TO EXCLUDE MCWD (I MEAN SEEMS LIKE VPD HAS THE STRONGER SIGNAL WHICH IS BEING INCLUDED, MAP GENERALLY INCLUDED)? ARIDITY INDEX IS LIKE A PROXY OF DROUGHT STRESS I.E. COULD BE USED IN PLACE OF MCWD. 
+
+```{r}
+data_df_climate<- data_df_treecover %>% dplyr::select(Aridity, DrySeasonLength, DrySeasonRainfall,
+                                        MAP, MCWD, VPD, BinaryBurn)
+head(data_df_climate)
+data_df_climate$BinaryBurn<- as.factor(data_df_climate$BinaryBurn)
+
+data_df_climate_pivot<- data_df_climate %>% pivot_longer(1:6)
+head(data_df_climate_pivot)
+
+ggplot(data_df_climate_pivot, aes(x=value))+
+  geom_histogram()+
+  facet_wrap(~ name, scales= "free_x") 
+
+data_df_climate_pivot_transform<- data_df_climate_pivot %>% mutate(value_log= log1p(value)) #does not work with MCWD
+ggplot(data_df_climate_pivot_transform, aes(x=value_log))+
+  geom_histogram()+
+  facet_wrap(~ name, scales= "free_x") 
+
+library(caret)
+preproc.param <- data_df_climate %>% 
+  caret::preProcess(method = c("center", "scale")) # normalizing/ standardizing the data
+
+data_df_climate.transformed <- preproc.param %>% predict(data_df_climate)
+
+modeltrial<- MASS::lda(BinaryBurn~., data=data_df_climate.transformed)
+modeltrial
+plot(modeltrial) #no proper separation
+
+# From the LD1 coefficients, seems like aridity index, MAP and VPD are most important (based on absolute value)
+
+remove(data_df_climate, data_df_climate_pivot, data_df_climate_pivot_transform, data_df_climate.transformed)
+```
+
+Preparing final df with 5 vars- I exclude MAP for now. 
+Final variables- aridity index, VPD, PCA 1 and 2 about herbivory and sand fraction, across burned and unburned points.
+
+
+I divide the data into training and testing data. Sami's latest email says that I need to do spatial validation, which I have not done for the moment. 
+```{r}
+
+head(data_df_treecover)
+names(data_df_treecover)
+
+data_df_treecover2<- data_df_treecover %>% dplyr::select(-c(BuffaloDM, CattleDM, DrySeasonLength, DrySeasonRainfall, GoatDM,
+                                                            HorseDM, MCWD, SheepDM, WaterHoldingCap, MAP))
+
+names(data_df_treecover2)
+data_df_treecover2<- data_df_treecover2 %>% dplyr::select(-c(PC1...21,PC2...22))
+names(data_df_treecover2)[9]<-c("PCA1")
+names(data_df_treecover2)[10]<-c("PCA2")
+
+train <- data_df_treecover2%>% sample_frac(0.75) #randomly sample 75% of the data to train the model 
+test <- anti_join(data_df_treecover2,train) 
+
+```
+
+###2. Modeling
+
+1. Model trial- tree cover% ~ MAP 
+I use tweedie distribution, which is the family of probability distributions that includes normal, gamma and inverse gaussian distributions. It is a special case of exponential distribution because the distribution of % tree cover, % nontreecover and %bare ground seems to follow this distribution i.e. right and left skewed. I use the log link because the predicted treecover can only have positive values. 
+
+
+```{r}
+
+library(mgcv)
+modtrial<- mgcv::gam(Percent_Tree_Cover_mean~ s(MAP) + s(x,y), 
+                     family=tw(link = 'log'), method = 'REML',
+                     data=train)
+summary(modtrial)
+plot(modtrial, pages=1, all.terms=TRUE, rug=TRUE, shade=TRUE,shift=coef(modtrial)[1])
+
+vis.gam(modtrial, view=c("x", "y"), plot.type = "contour", too.far=0.1)
+vis.gam(modtrial, view=c("x", "y"), plot.type = "contour", too.far=0.05)
+```
+The above trial model shows that as MAP increases, TC% also increases generally.
+
+2. tree cover% ~MAP in burned areas vs unburned areas
+
+```{r}
+mod1<- mgcv::gam(Percent_Tree_Cover_mean ~ BinaryBurn + s(MAP)+ s(MAP, by=oBurn2)+ s(x,y), 
+                 family= tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod1, shade = TRUE, scale = 0, seWithMean = TRUE)
+vis.gam(mod1, view=c("x", "y"), plot.type = "persp")
+vis.gam(mod1, view=c("x", "y"), plot.type = "contour", too.far=0.1)
+summary(mod1)
+
+summary(mod1)$r.sq # rsq from train data=82.1%
+
+cor(predict(mod1, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod1,type='response')-train$Percent_Tree_Cover_mean)**2)) #12.58%
+sqrt(mean((predict(mod1,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #10.21 %
+
+
+gam.check(mod1)
+concurvity(mod1, full=TRUE)
+concurvity(mod1, full=FALSE)
+
+```
+gam.check shows statistical significance of variable meaning that the residuals are NOT random which implies that 9 basis functions is insufficient. SHowever, choosing # of basis function is really hard. You do not want it to be too high because that would make the relationship linear and then you do not want it to be too low such that it does not fit the data. ASK SAMI # BASIS FUNCTIONS. 
+
+MAP is significant and so is difference in %tc between burned and unburned areas i.e. in burned areas %tc reduces. But lots of the variation is accounted for by x, y which I do not clearly know the meaning of
+
+2.tree cover% ~MAP + MCWD in burned areas
+
+```{r}
+mod2_climate<- mgcv::gam(Percent_Tree_Cover_mean ~ BinaryBurn + s(MAP, by=oBurn2)+ s(MAP)+ s(MCWD, by=oBurn2) +s(MCWD) +s(x,y), 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod2_climate, shade = TRUE, all.terms= TRUE, scale = 0, seWithMean = TRUE)
+summary(mod2_climate)
+vis.gam(mod2_climate, view=c("x", "y"), plot.type = "persp")
+vis.gam(mod2_climate, view=c("x", "y"), plot.type = "contour", too.far=0.1)
+
+gam.check(mod2_climate)
+
+summary(mod2_climate)$r.sq # rsq from train data=82.24%
+
+cor(predict(mod2_climate, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod2_climate,type='response')-train$Percent_Tree_Cover_mean)**2)) #12.51%
+sqrt(mean((predict(mod2_climate,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #10.23 %
+
+```
+MAP is significant and there is signficant difference in % tree cover in burned areas than unburned areas at constant average values of MAP. MCWD is not significant on its own, but %tc is different between burn conditions at averahe value of MCWD with increase in %tc in burned sites when compared to unburned sites. This is hard to understand. Does it mean that if considering only MCWD and at same value of MCWD in both sites, % tc is more in burned sites? How? 
+
+3. tree cover% ~ MAP+MCWD+VPD  in burned areas
+
+```{r}
+mod3_climate<- mgcv::gam(Percent_Tree_Cover_mean ~ s(MAP)+ s(MCWD)+s(VPD)+ s(x,y)+
+                                      s(MAP, by=oBurn2)+ s(MCWD, by=oBurn2)+s (VPD, by=oBurn2) +BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod3_climate, shade = TRUE, all.terms=TRUE, scale = 0, seWithMean = TRUE)
+summary(mod3_climate)
+vis.gam(mod3_climate, view=c("x", "y"), plot.type = "persp")
+vis.gam(mod3_climate, view=c("x", "y"), plot.type = "contour", too.far=0.05)
+
+
+summary(mod3_climate)$r.sq # rsq from train data=85.4%
+
+cor(predict(mod3_climate, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod3_climate,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod3_climate,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+```
+VPD, MAP are significant in predicting %tc on their own i.e as MAP increases %tc increases and as VPD increases %tc decreases which makes sense. There is no difference in %tc across burned areas. Does this mean that burn does not matter? 
+
+4.tree cover% ~ MAP+MCWD+VPD+Dry season length in burned areas
+```{r}
+mod4_climate<- mgcv::gam(Percent_Tree_Cover_mean ~ s(MAP)+ s(MCWD)+s(VPD)+s(DrySeasonLength)+s(x,y)+
+                                      s(MAP, by=oBurn2)+ s(MCWD, by=oBurn2)+s (VPD, by=oBurn2) + s(DrySeasonLength, by=oBurn2)+BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod4_climate, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod4_climate)
+vis.gam(mod4_climate, view=c("x", "y"), plot.type = "persp")
+vis.gam(mod4_climate, view=c("x", "y"), plot.type = "contour", too.far=0.05) ##lots of red for the first time!
+
+summary(mod4_climate)$r.sq # rsq from train data=82.9%
+
+cor(predict(mod4_climate, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod4_climate,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod4_climate,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+```
+MAP, VPD and Dry season length are significant, with no signficance between burned and unburned areas, except for when MAP is at an average value. Strange is that as Dry Season Length increases %tc is increasing which cannot be correct!
+
+5.  tree cover% ~ MAP+MCWD+VPD+Dry season length+ Dry season rainfall in burned areas
+```{r}
+mod5_climate<- mgcv::gam(Percent_Tree_Cover_mean ~ s(MAP)+ s(MCWD)+s(VPD)+s(DrySeasonLength)+s(DrySeasonRainfall)+ s(x,y)+
+                                      s(MAP, by=oBurn2)+ s(MCWD, by=oBurn2)+s (VPD, by=oBurn2) + s(DrySeasonLength, by=oBurn2)+s(DrySeasonRainfall,by=oBurn2)+                                       BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod5_climate, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod5_climate)
+
+summary(mod5_climate)$r.sq # rsq from train data=85.8%
+
+cor(predict(mod5_climate, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod5_climate,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod5_climate,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+
+```
+MAP, VPD, Dry season length and dry season rainfall are significant with no difference in %tc between burned and unburned areas
+
+6. tree cover % ~ MAP+VPD+MCWD+Dry season length+ dry season rainfall+ aridity in burned areas
+```{r}
+mod6_climate<- mgcv::gam(Percent_Tree_Cover_mean ~ s(MAP)+ s(MCWD)+s(VPD)+s(DrySeasonLength)+s(DrySeasonRainfall)+ s(Aridity)+ s(x,y)+
+                                      s(MAP, by=oBurn2)+ s(MCWD, by=oBurn2)+s (VPD, by=oBurn2) + s(DrySeasonLength, by=oBurn2)+s(DrySeasonRainfall,by=oBurn2)+s(Aridity, by=oBurn2)+ BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod6_climate, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod6_climate)
+vis.gam(mod6_climate, view=c("x", "y"), plot.type = "persp")
+vis.gam(mod6_climate, view=c("x", "y"), plot.type = "contour", too.far=0.05) ##red areas has changed
+
+summary(mod6_climate)$r.sq # rsq from train data=87.1%
+
+cor(predict(mod6_climate, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod6_climate,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod6_climate,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+
+```
+Apart from Dry season length, all other variables are significant on their own. Still no difference in %tc between burned and unburned areas. 
+Though insignficant, dry season length shows the right trend i.e decreasing %tc with increase in # dry months.
+
+7. tree cover% ~ climate+ soil in burned areas
+I should consider an interaction effect between sand frac and water holding capacity (based on jayashree's comment of coming up with an index sort of idea). But they seem to be proxies for each other in inverse sense i.e. more sandy places will have less water holding capacity. So modeling it separately.
+
+```{r}
+mod1_climate_soil<- mgcv::gam(Percent_Tree_Cover_mean ~ s(MAP)+ s(MCWD)+s(VPD)+s(DrySeasonLength)+s(DrySeasonRainfall)+ s(Aridity)+ 
+                                s(Sandfrac)+ s(x,y)+
+                                s(MAP, by=oBurn2)+ s(MCWD, by=oBurn2)+s (VPD, by=oBurn2) + 
+                                s(DrySeasonLength, by=oBurn2)+s(DrySeasonRainfall,by=oBurn2)+s(Aridity, by=oBurn2)+ s(Sandfrac, by=oBurn2)+
+                                BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod1_climate_soil, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod1_climate_soil)
+
+summary(mod1_climate_soil)$r.sq # rsq from train data=87.2%
+
+vis.gam(mod1_climate_soil, view=c("x", "y"), plot.type = "persp")
+vis.gam(mod1_climate_soil, view=c("x", "y"), plot.type = "contour", too.far=0.05) ##red areas has changed
+
+cor(predict(mod1_climate_soil, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod1_climate_soil,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod1_climate_soil,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+
+```
+
+Except for dry seaosn length, all other variables on their own are significant with the correct, intuitive pattern. No signficance in burned areas when compared to unburned areas. Again, does this mean that fire is not significant in India? 
+
+8. tree cover% ~ climate+ Sand frac + Water holding capcaity in burned areas
+```{r}
+mod2_climate_soil<- mgcv::gam(Percent_Tree_Cover_mean ~ s(MAP)+ s(MCWD)+s(VPD)+s(DrySeasonLength)+s(DrySeasonRainfall)+ s(Aridity)+ 
+                                s(Sandfrac)+ s(WaterHoldingCap)+ s(x,y)+
+                                s(MAP, by=oBurn2)+ s(MCWD, by=oBurn2)+s (VPD, by=oBurn2) + 
+                                s(DrySeasonLength, by=oBurn2)+s(DrySeasonRainfall,by=oBurn2)+s(Aridity, by=oBurn2)+ s(Sandfrac, by=oBurn2)+
+                                s(WaterHoldingCap, by=oBurn2)+BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod2_climate_soil, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod2_climate_soil)
+
+summary(mod2_climate_soil)$r.sq # rsq from train data=89.5%
+
+cor(predict(mod2_climate_soil, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod2_climate_soil,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod2_climate_soil,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+```
+At same values of water holding capcaity, there is a significant difference in %tc in burned areas when compared to unburned areas. But plot shows increasing %tc, which does not make sense. If it is the same value of water holding capacity in both sites, you would think that %tc should reduce in burned areas? 
+
+
+9. tree cover% ~ climate+ soil+browsers (goat) in burned areas
+```{r}
+mod_climate_soil_browser<- mgcv::gam(Percent_Tree_Cover_mean ~
+                                       s(MAP)+s(VPD)+s(MCWD)+s(DrySeasonLength)+s(DrySeasonRainfall)+s(Aridity)+
+                                       s(Sandfrac)+s(WaterHoldingCap)+s(GoatDM)+ s(x,y)+
+                                      s(MAP, by=oBurn2)+s(VPD, by=oBurn2)+ s(Sandfrac, by=oBurn2)+
+                                       s(Aridity, by=oBurn2)+ s(MCWD, by=oBurn2)+
+                                      s(DrySeasonLength,by=oBurn2)+s(DrySeasonRainfall,by=oBurn2)+  
+                                      s(WaterHoldingCap, by=oBurn2)+ s(GoatDM, by=oBurn2)+
+                                      BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod_climate_soil_browser, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod_climate_soil_browser)
+
+summary(mod_climate_soil_browser)$r.sq # rsq from train data=89.5%
+
+cor(predict(mod_climate_soil_browser, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod_climate_soil_browser,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod_climate_soil_browser,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+```
+
+10. tree cover% ~ climate+ soil+browsers (goat)+ grazers (remaining herbivores starting with cattle and buffalo) in burned areas
+```{r}
+mod1_climate_soil_browser_grazer<- mgcv::gam(Percent_Tree_Cover_mean ~
+                                       s(MAP)+s(VPD)+s(MCWD)+s(DrySeasonLength)+s(DrySeasonRainfall)+s(Aridity)+
+                                       s(Sandfrac)+s(WaterHoldingCap)+s(GoatDM)+ s(BuffaloDM)+s(x,y)+
+                                      s(MAP, by=oBurn2)+s(VPD, by=oBurn2)+ s(Sandfrac, by=oBurn2)+
+                                       s(Aridity, by=oBurn2)+ s(MCWD, by=oBurn2)+
+                                      s(DrySeasonLength,by=oBurn2)+s(DrySeasonRainfall,by=oBurn2)+  
+                                      s(WaterHoldingCap, by=oBurn2)+ s(GoatDM, by=oBurn2)+ s(BuffaloDM, by=oBurn2)+
+                                      BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+
+plot(mod1_climate_soil_browser_grazer, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod1_climate_soil_browser_grazer)
+
+summary(mod1_climate_soil_browser_grazer)$r.sq # rsq from train data=89.4%
+
+cor(predict(mod1_climate_soil_browser_grazer, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod1_climate_soil_browser_grazer,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod1_climate_soil_browser_grazer,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+
+```
+11 tree cover% ~ climate+ soil+browsers (goat)+ grazers (remaining herbivores starting with cattle and buffalo) in burned areas
+```{r}
+mod2_climate_soil_browser_grazer<- mgcv::gam(Percent_Tree_Cover_mean ~
+                                       s(MAP)+s(VPD)+s(MCWD)+s(DrySeasonLength)+s(DrySeasonRainfall)+s(Aridity)+
+                                       s(Sandfrac)+s(WaterHoldingCap)+s(GoatDM)+ s(BuffaloDM)+ s(CattleDM)+s(x,y)+
+                                      s(MAP, by=oBurn2)+s(VPD, by=oBurn2)+ s(Sandfrac, by=oBurn2)+
+                                       s(Aridity, by=oBurn2)+ s(MCWD, by=oBurn2)+
+                                      s(DrySeasonLength,by=oBurn2)+s(DrySeasonRainfall,by=oBurn2)+  
+                                      s(WaterHoldingCap, by=oBurn2)+ s(GoatDM, by=oBurn2)+ s(BuffaloDM, by=oBurn2)+
+                                        s(CattleDM, by=oBurn2)+
+                                      BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+plot(mod2_climate_soil_browser_grazer, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod2_climate_soil_browser_grazer)
+
+summary(mod2_climate_soil_browser_grazer)$r.sq # rsq from train data=89.9%
+
+cor(predict(mod2_climate_soil_browser_grazer, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod2_climate_soil_browser_grazer,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod2_climate_soil_browser_grazer,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+```
+
+12. tree cover% ~ climate+ soil+browsers (goat)+ grazers (remaining herbivores starting with cattle and buffalo) in burned areas
+```{r}
+mod3_climate_soil_browser_grazer<- mgcv::gam(Percent_Tree_Cover_mean ~
+                                       s(MAP)+s(VPD)+s(MCWD)+s(DrySeasonLength)+s(DrySeasonRainfall)+s(Aridity)+
+                                       s(Sandfrac)+s(WaterHoldingCap)+s(GoatDM)+ s(BuffaloDM)+ s(CattleDM)+
+                                         s(HorseDM)+ s(SheepDM)+s(x,y)+
+                                      s(MAP, by=oBurn2)+s(VPD, by=oBurn2)+ s(Sandfrac, by=oBurn2)+
+                                       s(Aridity, by=oBurn2)+ s(MCWD, by=oBurn2)+
+                                      s(DrySeasonLength,by=oBurn2)+s(DrySeasonRainfall,by=oBurn2)+  
+                                      s(WaterHoldingCap, by=oBurn2)+ s(GoatDM, by=oBurn2)+ s(BuffaloDM, by=oBurn2)+
+                                        s(CattleDM, by=oBurn2)+s(HorseDM, by=oBurn2)+ s(SheepDM, by=oBurn2)+
+                                      BinaryBurn, 
+                 family=tw(link = 'log'),
+                 method='REML',
+                 data=train)
+
+plot(mod3_climate_soil_browser_grazer, all.terms=TRUE,shade = TRUE, scale = 0, seWithMean = TRUE)
+summary(mod3_climate_soil_browser_grazer)
+
+summary(mod3_climate_soil_browser_grazer)$r.sq # rsq from train data=90.4%
+
+cor(predict(mod3_climate_soil_browser_grazer, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+sqrt(mean((predict(mod3_climate_soil_browser_grazer,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+sqrt(mean((predict(mod3_climate_soil_browser_grazer,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+```
+
+Some plots comparing Rsq, RMSE between training and testing 
+```{r}
+summary(mod6_climate)$r.sq
+summary(mod2_climate_soil)$r.sq
+summary(mod_climate_soil_browser)$r.sq
+summary(mod3_climate_soil_browser_grazer)$r.sq
+
+rsq_df_train<-data.frame(Model=character(),
+                   Rsq=double())
+rsq_df_train[1,1]<- "With Climate+ s(lat,long)"
+rsq_df_train[2,1]<- "With Climate+ soil +s(lat,long)"
+rsq_df_train[3,1]<-"With Climate+ soil+ browser (goat)+ s(lat,long)"
+rsq_df_train[4,1]<- "With Climate+ soil+ browser+ grazers+ s(lat,long)"
+
+rsq_df_train[1,2]<- summary(mod6_climate)$r.sq
+rsq_df_train[2,2]<- summary(mod2_climate_soil)$r.sq
+rsq_df_train[3,2]<-summary(mod_climate_soil_browser)$r.sq
+rsq_df_train[4,2]<- summary(mod3_climate_soil_browser_grazer)$r.sq
+
+rsq_df_train$Datapartition<-"Train"
+
+rsq_df_test<-data.frame(Model=character(),
+                   Rsq=double())
+rsq_df_test[1,1]<- "With Climate+ s(lat,long)"
+rsq_df_test[2,1]<- "With Climate+ soil +s(lat,long)"
+rsq_df_test[3,1]<-"With Climate+ soil+ browser (goat)+ s(lat,long)"
+rsq_df_test[4,1]<- "With Climate+ soil+ browser+ grazers+ s(lat,long)"
+
+rsq_df_test[1,2]<- cor(predict(mod6_climate, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+rsq_df_test[2,2]<- cor(predict(mod2_climate_soil, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+rsq_df_test[3,2]<-cor(predict(mod_climate_soil_browser, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+rsq_df_test[4,2]<-cor(predict(mod3_climate_soil_browser_grazer, newdata=test, type='response'), test$Percent_Tree_Cover_mean)**2
+
+rsq_df_test$Datapartition<-"Test"
+
+rsq_df<-bind_rows(rsq_df_train, rsq_df_test)
+
+rsq_plot<-ggplot(data=rsq_df, aes(x=Model, y=Rsq, fill=Datapartition)) +
+  geom_bar(stat="identity",position="dodge") +scale_fill_brewer(palette="Reds")+ theme_minimal()+ theme(axis.text.x=element_text(angle=90))
+rsq_plot
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//ModelResults//model_rsq.png", dpi=400)
+
+rmse_df_train<-data.frame(Model=character(),
+                   rmse=double())
+rmse_df_train[1,1]<- "With Climate+ s(lat,long)"
+rmse_df_train[2,1]<- "With Climate+ soil +s(lat,long)"
+rmse_df_train[3,1]<-"With Climate+ soil+ browser (goat)+ s(lat,long)"
+rmse_df_train[4,1]<- "With Climate+ soil+ browser+ grazers+ s(lat,long)"
+
+rmse_df_train[1,2]<- sqrt(mean((predict(mod6_climate,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+rmse_df_train[2,2]<- sqrt(mean((predict(mod2_climate_soil,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+rmse_df_train[3,2]<-sqrt(mean((predict(mod_climate_soil_browser,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+rmse_df_train[4,2]<- sqrt(mean((predict(mod3_climate_soil_browser_grazer,type='response')-train$Percent_Tree_Cover_mean)**2)) #5.67%
+
+rmse_df_train$Datapartition<-"Train"
+
+rmse_df_test<-data.frame(Model=character(),
+                   rmse=double())
+rmse_df_test[1,1]<- "With Climate+ s(lat,long)"
+rmse_df_test[2,1]<- "With Climate+ soil +s(lat,long)"
+rmse_df_test[3,1]<-"With Climate+ soil+ browser (goat)+ s(lat,long)"
+rmse_df_test[4,1]<- "With Climate+ soil+ browser+ grazers+ s(lat,long)"
+
+rmse_df_test[1,2]<- sqrt(mean((predict(mod6_climate,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+rmse_df_test[2,2]<- sqrt(mean((predict(mod2_climate_soil,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+rmse_df_test[3,2]<- sqrt(mean((predict(mod_climate_soil_browser,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+rmse_df_test[4,2]<-sqrt(mean((predict(mod3_climate_soil_browser_grazer,type='response',newdata=test)-test$Percent_Tree_Cover_mean)**2)) #7.19 %
+
+rmse_df_test$Datapartition<-"Test"
+
+rmse_df<-bind_rows(rmse_df_train, rmse_df_test)
+
+rmse_plot<-ggplot(data=rmse_df, aes(x=Model, y=rmse, fill=Datapartition)) +
+  geom_bar(stat="identity",position="dodge") +scale_fill_brewer(palette="Reds")+ theme_minimal()+ theme(axis.text.x=element_text(angle=90))
+rmse_plot
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//ModelResults//model_rmse.png", dpi=400)
+
+
+
+
+
+
+```
+
+
+## Model selection
+```{r}
+AIC(mod6_climate, mod2_climate_soil, mod_climate_soil_browser, mod3_climate_soil_browser_grazer)
+
+```

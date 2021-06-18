@@ -1,0 +1,136 @@
+---
+title: "EDA"
+author: "Trisha Gopalakrishna"
+date: "15/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(RColorBrewer)
+library(lattice)
+library(tidyverse)
+library(raster)
+library(rgdal)
+library(ggplot2)
+library(sf)
+library(ncdf4)
+library(tmap)
+library(RColorBrewer)
+library(viridis)
+library(ncdf4)
+library(terra)
+library(gtools)
+
+terraOptions(memfrac=0.5, tempdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+             progress=10)
+rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+              tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+09)
+memory.limit(size=20000)
+```
+
+## Introduction
+
+In this script, I complete EDA. 
+
+Duplicates and NA
+
+```{r}
+data100<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Sampled_Data//x100mm_data.csv")
+data100
+summary(data100)
+
+data100_1<-data100 %>% filter(!is.na(VPD) & !is.na(Sandfrac))
+summary(data100_1)
+
+
+data100_1<-dplyr::select(data100_1, -c(X, cell)) 
+data100_1<- data100_1 %>% mutate(BinaryBurn= replace(BinaryBurn, is.na(BinaryBurn),0))
+summary(data100_1)
+
+write.csv(data100_1, "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Sampled_Data//cleanedx100mm_data.csv")
+
+data100_1<- data100_1 %>% distinct() #no duplicate rows
+
+remove(data100)
+```
+
+## EDA
+
+1. Distribution of all variables
+
+```{r}
+head(data100_1)
+str(data100_1)
+
+data100_pivot<-tidyr::pivot_longer(data100_1, 1:18)
+head(data100_pivot)
+
+ggplot(data100_pivot, aes(x=value))+
+  geom_histogram()+
+  facet_wrap(~ name, scales= "free_x") 
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Sampled_Data//data_distribution.png", dpi = 300)
+
+```
+All variables, both predictors and response, are skewed. Response variables- %tree cover and %non tree cover do not cover the full range of possible values. Among the climate predictor variables- VPd seems to show good distribution, while aridity, MAP, dry season rainfall is left skewed and dry season length and MCWD is right skewed. Among the soil variables- sand fraction and water holding capacity have a wide distribution. 
+
+We need to eliminate burn frequency and be aware that there are very few burned points summary (28/879). All herbivory data is left skewed. 
+
+2. Predictor- Response relations
+
+```{r}
+head(data100_1)
+names(data100_1)
+
+data100_pivot_percentreecover<- pivot_longer(data100_1, 1:15)
+head(data100_pivot_percentreecover)
+
+ggplot(data100_pivot_percentreecover, aes(value, Percent_Tree_Cover_mean)) + 
+  geom_point() + 
+  facet_wrap(~name, scales = "free")
+ggsave("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Sampled_Data//response_predictor_scatterplot.png", dpi = 300)
+```
+Breaking this down-
+
+Climate
+As aridity increases increases i.e. more water in the air, more tree cover. Tree cover decreases with VPS, which is good.  Dry season length and dry season rainfall have a range of TC in a particular range, same with MAP. However, these patterns are not as distinct as the previous sampling (whihc was done based on MAP and not MCWD).  
+
+
+No signal with burn. Will remove burn frequency. 
+
+As water holding capcaity increases, TC increases which also makes sense. There are a range of sand fraction values within which TC can have a wide range. However, again these patterns are not as distinct as the previous sampling. 
+
+Not much signal with herbivory dry matter intakes. However for buffalo and cattle DM, it looks like there is a strong decrease in TC. 
+
+
+3. Correlations between predictor variables
+
+```{r}
+library("Hmisc")
+
+x<-rcorr(as.matrix(data100_1[,-c(16,17,18)]), type = "spearman") #no response
+
+ut <- upper.tri(x$r)
+cor_df<-data.frame(row = rownames(x$r)[row(x$r)[ut]],
+    column = rownames(x$r)[col(x$r)[ut]],
+    cor  =(x$r)[ut],
+    p = (x$P)[ut])
+print(cor_df)
+
+source("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper1//Scripts//ReforestationPotentialIndia//screen_cor.R")
+print(screen.cor(data100_1[,-c(16,17,18)]))
+
+#install.packages("PerformanceAnalytics")
+library(PerformanceAnalytics)
+
+chart.Correlation(data100_1[,-c(16,17,18)], histogram = TRUE, method="pearson")
+```
+VPD is positively correlated to dry season length which makes sense. VPS is negatively correlated to aridity index, which makes sense when thinking in terms of increase in temperature. I do not know how aridity is negatively correlated to dry season length because I would think they are positively correlated. Aridity being negatively correlated to dry season rainfall makes sense. 
+
+Herbivory variable sdo not seem to be correlated to other variables to a large extent. Of course, burn frequency and binary burn are correlated to each other. 
+
+Sand fraction is positively correlated with MCWD, which makes sense because MCWD, a measure of drought will probably be the case in sandy areas. Water holding capacity is positively correlated to MAP, which makes sense too i.e. areas with high rainfall might be able to hold lots of water.  
+

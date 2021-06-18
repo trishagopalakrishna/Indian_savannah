@@ -1,0 +1,354 @@
+---
+title: "climate_ordination"
+author: "Trisha Gopalakrishna"
+date: "24/05/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(RColorBrewer)
+library(lattice)
+library(raster)
+library(sf)
+library(terra)
+library(tmap)
+
+library(tidyverse)
+library(dplyr)
+
+library(ggplot2)
+
+library(viridis)
+
+
+terraOptions(memfrac=0.5, tempdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+             progress=10)
+rasterOptions(overwrite = TRUE, tmpdir = "C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Scratch",
+              tmptime = 2, progress="window", timer = TRUE,chunksize = 2e+07, maxmemory = 1e+09)
+memory.limit(size=20000)
+```
+
+## Introduction
+
+Based on Yadvinder and Sami's suggestion in the May meeting of the Indian savannah study, I am going to use ordination techniques to reduce the climate variables to 2 variables max in this script. I will start first with doing Principle Component Analyses (PCA), then Nonmetric Multidimensional Scaling (NMDS) and then Linear Discriminant Funciton Analysis (LDF) only on the climate data for now. Will probably do similar analyses on the herbivory data too. 
+
+
+###1. Data input
+
+```{r}
+data_df<-read.csv("C://Users//Trisha_Gopalakrishna//OneDrive - Nexus365//Paper2//Output//Sampled_Data//cleanedx100mm_data.csv")
+head(data_df)
+summary(data_df)
+
+data_df_climate<- data_df %>% dplyr::select(Aridity_studyarea, DrySeasonLength, DrySeasonRainfall,
+                                        MAP, MCWD, VPD, BinaryBurn)
+
+head(data_df_climate)
+names(data_df_climate)[1]<-"Aridity"
+
+data_df_herbivory<- data_df %>% dplyr:: select(BinaryBurn, BuffaloDM, CattleDM, GoatDM, HorseDM, SheepDM)
+head(data_df_herbivory)
+
+```
+
+###2. PCA
+Assumptions- check for linearity and multinormality. 
+
+```{r}
+head(data_df_climate)
+str(data_df_climate)
+data_df_climate$BinaryBurn<- as.factor(data_df_climate$BinaryBurn)
+
+pairs(data_df_climate)
+
+data_df_climate_pivot<- data_df_climate %>% pivot_longer(1:6)
+head(data_df_climate_pivot)
+
+ggplot(data_df_climate_pivot, aes(x=value))+
+  geom_histogram()+
+  facet_wrap(~ name, scales= "free_x") 
+
+data_df_herbivory$BinaryBurn<- as.factor(data_df_herbivory$BinaryBurn)
+data_df_herbivory_pivot<- data_df_herbivory %>% pivot_longer(2:6)
+head(data_df_herbivory_pivot)
+
+ggplot(data_df_herbivory_pivot, aes(x=value))+
+  geom_histogram()+
+  facet_wrap(~ name, scales= "free_x") 
+
+```
+Linearity and normality assumptions are violated. 
+
+```{r}
+
+climate.pca<- data_df_climate %>% 
+  dplyr::select(1:6) %>%
+  stats::prcomp(scale.= TRUE, center= TRUE)
+
+climate.pca %>% summary()
+climate.pca$rotation
+
+
+plot(climate.pca)
+
+herbivory.pca<- data_df_herbivory %>% 
+  dplyr::select(2:6) %>%
+  stats::prcomp(scale.= TRUE, center= TRUE)
+
+herbivory.pca %>% summary()
+herbivory.pca$rotation
+
+
+plot(herbivory.pca)
+
+              
+```
+First 2 components explain 77.3% of the variance with PCA 1 explaining 57.7% of the variance in the data (see screeplot below).
+
+
+```{r}
+#library(devtools)
+#devtools::install_github("vqv/ggbiplot")
+library(ggbiplot)
+
+climate.pca %>%
+  ggbiplot::ggbiplot(alpha=0.5, groups=data_df_climate$BinaryBurn)
+
+climate.pca %>%
+  ggbiplot::ggscreeplot()
+
+herbivory.pca %>%
+  ggbiplot::ggbiplot(alpha=0.25, groups=data_df_herbivory$BinaryBurn)
+
+herbivory.pca %>%
+  ggbiplot::ggscreeplot()
+
+
+```
+Biplot shows that MCWD and dry season rainfall might be positively correlated (small angle between the two vectors). MAP and aridity index also seem to be correlated positively. 
+
+Biplot shows that cattle and goat DM are positively correlated. So is Buffalo and sheep DM.
+
+
+###3. NMDS- DO NOT RUN
+```{r}
+#install.packages('vegan')
+#install.packages('ecodist')
+library(vegan)
+library(ecodist)
+
+climate.bcd<-distance(as.matrix(data_df_climate), method="bray")
+climate.xbcd<-stepacross(climate.bcd, path="extended")
+
+climate.nms.step <- nmds(climate.bcd, nits=10, mindim=1, maxdim=6) #took 4 hours to run
+attributes(climate.nms.step)
+climate.nms.step$r2
+climate.nms.stress <- matrix(climate.nms.step$stress, nrow=6, byrow=T)
+climate.nms.stress<- as_tibble(climate.nms.stress)
+
+climate.nms.stress <- climate.nms.stress %>% rowwise() %>%
+                                                    dplyr::mutate(mean=mean(c(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)),
+                                                    min= min(c(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)),
+                                                    max= max(c(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)))
+
+climate.nms.stress.reduced<- climate.nms.stress %>% select(mean, min, max)
+climate.nms.stress.reduced$Dim<- 1:nrow(climate.nms.stress.reduced) # could not figure out how to do this in dplyr
+
+
+ggplot(data=climate.nms.stress.reduced, aes(x= Dim, y=mean, group=1)) +
+  geom_line()+
+  geom_point()
+
+climate.nms.r2 <- matrix(climate.nms.step$r2, nrow=6, byrow=T)
+climate.nms.r2<- as_tibble(climate.nms.r2)
+
+climate.nms.r2 <- climate.nms.r2 %>% rowwise() %>%
+                                                    dplyr::mutate(mean=mean(c(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)),
+                                                    min= min(c(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)),
+                                                    max= max(c(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)))
+
+climate.nms.r2.reduced<- climate.nms.r2 %>% select(mean, min, max)
+climate.nms.r2.reduced$Dim<- 1:nrow(climate.nms.r2.reduced) # could not figure out how to do this in dplyr
+
+ggplot(data=climate.nms.r2.reduced, aes(x= Dim, y=mean, group=1)) +
+  geom_line()+
+  geom_point()
+
+
+Sys.time();climate.nmds.final <- nmds(climate.bcd,mindim=2,maxdim=2,nits=20); Sys.time()# 2.5 hours
+
+s.min <- which.min(climate.nmds.final$stress) 
+climate.nmds.final$stress[s.min] 
+climate.best.grabs <- nmds.min(climate.nmds.final) # grabs the best of 20 reps
+
+
+nms.pca<-princomp(climate.best.grabs)
+print(nms.pca)
+summary(nms.pca)
+climate.best.grabs<-nms.pca$scores
+colnames(climate.best.grabs) <- c("NMS1", "NMS2")
+
+
+nms2.xod<-dist(climate.best.grabs)
+plot(nms2.xod,climate.xbcd,pch="*",xlab="Ordination Distance", ylab="Extended B-C Distance")
+# crap graph. It is supposed to show monotonic linear increase
+
+nms.xod1 <- dist(climate.best.grabs[,1])
+nms.xod2 <- dist(climate.best.grabs[,1:2])
+# axis 1 is OK as is:
+r1<-cor(climate.xbcd,nms.xod1)
+r2.1<-r1^2; r2.1 #1.3%
+# axis 2 is 2-D minus 1-D solution:
+r2<-cor(climate.xbcd,nms.xod2)
+r2.2<-r2^2; r2.2-r2.1; r2.2 #1.8%
+
+plot(climate.best.grabs[,2:1],pch=19, xlab="NMS 2",ylab="NMS 1")
+climate.nms.vf<-vf(climate.best.grabs[,2:1],data_df_climate[,-c(7:9)])  
+plot.vf(climate.nms.vf, pval=0.05, col="red") # did not work
+
+remove(climate.best.grabs, climate.nmds.final, climate,nms.r2, climate.nms.r2.reduced, climate.nms.step, climate.nms.stress, climate.nms.r2, climate.nms.stress.reduced, climate.nms.vf, climate.pca, nms.pca, climate.bcd, climate.xbcd, nms.stress.mean, nms.xod1, nms.xod2, nms2.xod, r1, r2, r2.1, r2.2, s.min, x)
+```
+
+###3. Linear Discriminant Analyses
+From http://www.sthda.com/english/articles/36-classification-methods-essentials/146-discriminant-analysis-essentials-in-r/
+The LDA algorithm starts by finding directions that maximize the separation between classes, then use these directions to predict the class of individuals. These directions, called linear discriminants, are a linear combinations of predictor variables. We are interested in the linear discriminants. 
+
+The main assumptions of LDA is normality of all predictor variables. We know that the predictors are not normal, in which case we need to transform the data. Another consideration is that the data needs to be standardized. 
+
+Aridity, MAP and Dry season rainfall seems to be skewed to the right, while dry season length and MCWD is left skewed. VPD seems normal
+
+All herbivory dry matter intakes are right skewed
+```{r}
+hist(log(data_df_climate$Aridity)) 
+hist(log(data_df_climate$MAP))
+hist(log(data_df_climate$DrySeasonRainfall))
+# looks normal after using log transformation
+
+hist((data_df_climate$DrySeasonLength))
+
+hist(log(data_df_herbivory$BuffaloDM))
+hist(log(data_df_herbivory$CattleDM))
+hist(log(data_df_herbivory$GoatDM))
+hist(log(data_df_herbivory$HorseDM))
+hist(log(data_df_herbivory$SheepDM))
+
+####################################Box Cox trial- DO NOT RUN
+#dryseasonlength<-data_df_climate$DrySeasonLength
+#dryseasonlength<-dryseasonlength[dryseasonlength!=0]
+
+#library(MASS)
+#Box<-MASS::boxcox(dryseasonlength~1) 
+#Cox<- data.frame(Box$x, Box$y)
+#Cox2<- Cox[with(Cox, order(-Cox$Box.y)),]
+#Cox2[1,]
+
+#lambda<- Cox2[1, "Box.x"]
+#T_box<- (dryseasonlength^lambda-1)/lambda
+
+#hist(T_box)
+
+#remove(Box, Cox, Cox2, T_box, lambda)
+```
+Transforming MCWD and dry season length is difficult and I tried using Boxcox transformations. But I do not understand how I would back transform the values. Also, Boxcox only works for positive numbers, so it would not work for MCWD.
+
+I proceed by only centering and scaling the climate variables (no transformations because I do not undertsnad how I would back transform and interpret the variables)
+
+
+```{r}
+train <- data_df_climate%>% sample_frac(0.75) #randomly sample 75% of the data to train the model 
+test <- anti_join(data_df_climate,train) 
+
+library(caret)
+preproc.param <- train %>% 
+  caret::preProcess(method = c("center", "scale")) # normalizing/ standardizing the data
+
+train.transformed <- preproc.param %>% predict(train)
+test.transformed <- preproc.param %>% predict(test)
+
+
+modeltrial<- MASS::lda(BinaryBurn~., data=train.transformed)
+modeltrial
+plot(modeltrial)
+
+trialpredictions<- modeltrial %>% predict (test.transformed)
+names(trialpredictions)
+
+x<-table(test.transformed$BinaryBurn, trialpredictions$class)
+x #0 were correctly classified?
+acc<- (x[1,1]+x[2,2])/(x[1,1]+x[2,1]+x[1,2]+x[2,2])
+acc
+sens<- x[1,1]/(x[1,1]+x[2,1])
+sens
+sp<-1-sens
+sp
+binom <- binom.test(x[1,1], (x[1,1]+x[2,1]), p = acc, alternative = c("greater"), conf.level = 0.95) #not significant significant!
+binom
+
+lda.data.train <- cbind(train.transformed, predict(modeltrial)$x)#################### LD1 for each point in training dataset
+lda.data.test <- cbind(test.transformed, trialpredictions$x)
+
+lda.data<- bind_rows(lda.data.train, lda.data.test)
+
+
+#############################QDA trial
+#modeltrial.qda<-MASS::qda(BinaryBurn~., data=train.transformed)
+#modeltrial.qda
+
+#trialpredictions.qda<- modeltrial.qda %>% predict(test.transformed)
+
+#x.qda<-table(test.transformed$BinaryBurn, trialpredictions.qda$class)
+#x.qda
+#acc.qda<- (x.qda[1,1]+x.qda[2,2])/(x.qda[1,1]+x.qda[2,1]+x.qda[1,2]+x.qda[2,2])
+#sens.qda<- x.qda[1,1]/(x.qda[1,1]+x.qda[2,1])
+#sp.qda<-1-sens.qda
+#binom.qda <- binom.test(x.qda[1,1], (x.qda[1,1]+x.qda[2,1]), p = acc, alternative = c("greater"), conf.level = 0.95) #not significant significant!
+
+#remove(modeltrial.qda, trialpredictions.qda, x.qda, acc.qda, sens.qda, sp.qda, binom.qda)
+
+train.herbivory <- data_df_herbivory%>% sample_frac(0.75) #randomly sample 75% of the data to train the model 
+test.herbivory <- anti_join(data_df_herbivory,train.herbivory) 
+
+preproc.param.herbivory <- train.herbivory %>% 
+  caret::preProcess(method = c("center", "scale")) # normalizing/ standardizing the data
+
+train.herbivory.transformed <- preproc.param.herbivory %>% predict(train.herbivory)
+test.herbivory.transformed <- preproc.param.herbivory %>% predict(test.herbivory)
+
+modeltrial.herbivory<- MASS::lda(BinaryBurn~., data=train.herbivory.transformed)
+modeltrial.herbivory
+plot(modeltrial.herbivory)
+
+trialpredictions.herbivory<- modeltrial.herbivory %>% predict (test.herbivory.transformed)
+names(trialpredictions.herbivory)
+
+x.herbivory<-table(test.herbivory.transformed$BinaryBurn, trialpredictions.herbivory$class)
+x.herbivory #0 were correctly classified?
+acc.herbivory<- (x.herbivory[1,1]+x.herbivory[2,2])/(x.herbivory[1,1]+x.herbivory[2,1]+x.herbivory[1,2]+x.herbivory[2,2])
+acc.herbivory
+sens.herbivory<- x.herbivory[1,1]/(x.herbivory[1,1]+x.herbivory[2,1])
+sens.herbivory
+sp.herbivory<-1-sens.herbivory
+sp.herbivory
+binom.herbivory <- binom.test(x.herbivory[1,1], (x.herbivory[1,1]+x.herbivory[2,1]), p = acc.herbivory, alternative = c("greater"), conf.level = 0.95) #not significant!
+binom.herbivory
+
+lda.data.train.herbivory <- cbind(train.herbivory.transformed, predict(modeltrial.herbivory)$x)#################### LD1 for each point in training dataset
+lda.data.test.herbivory <- cbind(test.herbivory.transformed, trialpredictions.herbivory$x)
+
+lda.data.herbivory<- bind_rows(lda.data.train.herbivory, lda.data.test.herbivory)
+
+```
+
+Two options moving ahead, based on Sami's reply 01/06/2021
+
+(1) Use PCA and LDA combination to extract variables of importance that would ultimately be use din the GAM
+(2) Create new variables, that are combinations of the climate and herbvivory variables (separately), which will be used in the GAM. But interpretability might be hard
+
+For former-
+(1) For herbivory- seems like either cattle or goat DM can be used and buffalo or sheep DM.
+(2) For climate- MCWD or dry season rainfall, VPD or dry season length, MAP or or aridity index.
+[ At this stage I would select MCWD, VPD and MAP]
